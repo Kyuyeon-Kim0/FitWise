@@ -34,19 +34,21 @@ with right:
     if not users:
         st.warning("분석할 사용자가 없습니다.")
     else:
-        user_names = {u["id"]: f"{u['name']} · {u['preferred_fit']} 핏 선호" for u in users}
+        user_names = {u["id"]: u["name"] for u in users}
         with st.form(f"fit_form_{product_id}"):
             user_id = st.selectbox("데모 사용자", list(user_names), format_func=user_names.get)
             size = st.radio("사이즈 선택", product["sizes"], horizontal=True)
+            preferred_fit = st.radio("평소 선호하는 핏", ["슬림핏", "레귤러핏", "루즈핏"],
+                                     horizontal=True)
             submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
         if submitted:
             try:
                 with st.spinner("구매·반품 기록과 저장된 리뷰 분석 결과를 확인하고 있습니다..."):
-                    st.session_state.fit_result = run_fit(product_id, user_id, size)
+                    st.session_state.fit_result = run_fit(product_id, user_id, size, preferred_fit)
                 st.switch_page("views/fit_result.py")
             except ValueError as exc:
                 st.error(str(exc))
-        st.caption("규칙 기반 분석 · API 미연결 · 내부 적합도 지표")
+        st.caption("가중치 기반 적합도 점수 · AI Fit Advisor · 내부 참고 지표")
 
 st.subheader("사이즈 가이드")
 st.caption("단면 기준 · cm · 가상 실측 데이터")
