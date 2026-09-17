@@ -1,4 +1,5 @@
 import json
+import random
 import sqlite3
 from pathlib import Path
 
@@ -24,7 +25,7 @@ def initialize(database=None, seed=True):
     with connect(database) as connection:
         # 다른 개발 작업의 기존 DB를 자동 변경하지 않습니다.
         expected = {
-            "users": {"id", "name", "preferred_fit"},
+            "users": {"id", "name", "preferred_fit", "height"},
             "products": {"id", "subcategory", "sizes", "measurements"},
             "orders": {"id", "user_id", "product_id", "size", "ordered_at"},
             "returns": {"id", "order_id", "reason", "returned_at"},
@@ -89,19 +90,49 @@ def seed_demo(connection):
         ("하이웨이스트 데님 쇼츠", "하의", "반바지", 42000, "DenimWorks의 여름 데님 쇼츠. 면 98%·스판 2% 소재로 슬림한 핏입니다.", "rose"),
         ("부츠컷 데님 팬츠", "하의", "청바지", 74000, "DenimWorks의 사계절 부츠컷 데님. 면 100% 소재로 밑단이 살짝 퍼지는 스트레이트핏입니다.", "sage"),
     ]
-    comments = [
-        (5, "정사이즈이고 착용감이 좋아요. 디자인도 예뻐요."),
-        (4, "가벼워서 편안해요. 핏이 예뻐요."),
-        (2, "사이즈가 커요. 소매가 길어요."),
-        (5, "마감이 좋아요. 착용감이 편안해요."),
-        (3, "소재가 얇아요. 디자인은 좋아요."),
-        (4, "정사이즈라 잘 맞아요. 핏이 좋아요."),
-        (2, "사이즈가 작아요. 조금 타이트해요."),
-        (5, "가볍고 부드러워요. 디자인이 예뻐요."),
+    users = [
+        ("김하늘", "레귤러핏", 165), ("이서준", "루즈핏", 180), ("박지우", "레귤러핏", 170),
+        ("최유나", "슬림핏", 160), ("정민준", "레귤러핏", 175), ("강서연", "루즈핏", 165),
+        ("조도윤", "슬림핏", 170), ("윤지호", "레귤러핏", 170), ("임채원", "슬림핏", 160),
+        ("한지민", "루즈핏", 180), ("오승우", "레귤러핏", 175), ("서연우", "슬림핏", 155),
+        ("신예은", "레귤러핏", 165), ("권도현", "루즈핏", 185), ("황유진", "슬림핏", 160),
+        ("안준서", "레귤러핏", 175), ("송하윤", "루즈핏", 160), ("전민서", "슬림핏", 170),
+        ("홍시우", "레귤러핏", 185), ("배수아", "루즈핏", 155),
     ]
+    # 카테고리와 무관한 공통 리뷰 소재. 옷마다 다른 부분집합을 뽑아 내용이 겹치지 않게 합니다.
+    common_fragments = [
+        (5, "정사이즈이고 착용감이 좋아요. 디자인도 예뻐요."), (5, "가볍고 부드러워요. 디자인이 예뻐요."),
+        (5, "마감이 좋아요. 착용감이 편안해요."), (5, "핏이 예뻐서 여러 번 재구매했어요."),
+        (5, "색감이 사진이랑 똑같고 고급스러워요."), (5, "부드러운 촉감이 마음에 들어요. 디자인도 세련됐어요."),
+        (5, "가벼워서 사계절 내내 잘 입어요."), (5, "마감 처리가 꼼꼼해서 오래 입을 것 같아요."),
+        (4, "가벼워서 편안해요. 핏이 예뻐요."), (4, "정사이즈라 잘 맞아요. 핏이 좋아요."),
+        (4, "무난하게 매일 입기 좋아요. 마감도 깔끔해요."), (4, "생각보다 만족스러워요. 재구매 의사 있어요."),
+        (4, "착용감이 편안하고 디자인도 무난해요."), (4, "가격 대비 만족스러운 품질이에요."),
+        (4, "핏이 슬림해서 깔끔하게 떨어져요."), (4, "부드러운 소재라 자주 손이 가요."),
+        (4, "핏이 루즈해서 편하게 입기 좋아요."),
+        (3, "소재가 얇아요. 디자인은 좋아요."), (3, "무난하지만 특별한 느낌은 없어요."),
+        (3, "핏은 괜찮은데 세탁 후 살짝 줄었어요."), (3, "가격 대비 무난한 정도예요."),
+        (3, "디자인은 예쁜데 소재가 조금 아쉬워요."), (3, "평범하지만 데일리로 입기엔 괜찮아요."),
+        (2, "소재가 생각보다 얇아서 비쳐요."), (2, "생각보다 얇아서 계절감이 안 맞아요."),
+        (1, "디자인이 예쁘지 않아요. 재질도 별로예요."), (1, "하나도 안 편안해요. 실망했어요."),
+        (1, "마감이 엉성해서 실밥이 보여요."), (1, "생각했던 색상과 많이 달라요."),
+    ]
+    top_fragments = [
+        (2, "사이즈가 커요. 소매가 길어요."), (2, "사이즈가 작아요. 조금 타이트해요."),
+        (2, "소매가 짧아서 손목이 드러나요."),
+        (1, "소매가 너무 길어서 불편해요."), (1, "생각보다 타이트해서 답답해요."),
+    ]
+    bottom_fragments = [
+        (2, "사이즈가 커요. 기장이 길어요."), (2, "사이즈가 작아요. 조금 타이트해요."),
+        (2, "허리가 커서 벨트가 필요해요."), (2, "허리가 작아서 불편해요."), (2, "기장이 짧아서 아쉬워요."),
+        (1, "사이즈가 안 맞아서 반품했어요. 허리가 너무 작아요."), (1, "기장이 너무 길어서 줄였어요."),
+        (1, "허리가 너무 커서 흘러내려요."),
+    ]
+    reviews_per_product = 24
     with connection:
-        connection.executemany("INSERT INTO users VALUES (?,?,?)", [
-            (1, "김하늘", "레귤러"), (2, "이서준", "루즈"), (3, "박지우", "레귤러")])
+        connection.executemany("INSERT INTO users VALUES (?,?,?,?)", [
+            (uid, name, fit, height) for uid, (name, fit, height) in enumerate(users, 1)])
+        user_ids = list(range(1, len(users) + 1))
         for pid, item in enumerate(catalog, 1):
             measurements = {}
             for i, size in enumerate(("S", "M", "L")):
@@ -112,7 +143,7 @@ def seed_demo(connection):
             connection.execute("INSERT INTO products VALUES (?,?,?,?,?,?,?,?,?)", (
                 pid, *item, json.dumps(["S", "M", "L"]), json.dumps(measurements, ensure_ascii=False)))
             for j in range(24):
-                uid = j % 3 + 1
+                uid = user_ids[j % len(user_ids)]
                 size = ("S", "M", "L")[(j // 3 + pid) % 3]
                 cursor = connection.execute(
                     "INSERT INTO orders(user_id,product_id,size,ordered_at) VALUES (?,?,?,?)",
@@ -120,12 +151,18 @@ def seed_demo(connection):
                 if (j + pid) % 5 == 0 or (uid == 1 and size == "L" and j % 2 == 0):
                     connection.execute("INSERT INTO returns(order_id,reason,returned_at) VALUES (?,?,?)",
                                        (cursor.lastrowid, "사이즈 큼" if size == "L" else "핏 불일치", "2026-08-28"))
-            for j, (rating, content) in enumerate(comments):
-                if item[1] == "하의":
-                    content = content.replace("소매가 길어요", "기장이 길어요")
+            # 상품마다 다른 무작위 부분집합을 뽑아 리뷰 구성이 겹치지 않게 하되, 같은 시드로
+            # 재실행해도 항상 같은 결과가 나오도록 상품 id를 시드로 고정합니다.
+            rng = random.Random(pid)
+            pool = common_fragments + (bottom_fragments if item[1] == "하의" else top_fragments)
+            picks = rng.sample(pool, reviews_per_product)
+            for j, (rating, content) in enumerate(picks):
+                uid = rng.choice(user_ids)
+                size = rng.choice(("S", "M", "L"))
+                month, day = rng.choice((6, 7, 8)), rng.randint(1, 28)
                 connection.execute(
                     "INSERT INTO reviews(user_id,product_id,size,rating,content,created_at) VALUES (?,?,?,?,?,?)",
-                    (j % 3 + 1, pid, ("S", "M", "L")[j % 3], rating, content, f"2026-08-{j + 10:02d}"))
+                    (uid, pid, size, rating, content, f"2026-{month:02d}-{day:02d}"))
 
 
 if __name__ == "__main__":

@@ -42,11 +42,12 @@ with right:
             size = st.radio("사이즈 선택", product["sizes"], horizontal=True)
             preferred_fit = st.radio("평소 선호하는 핏", ["슬림핏", "레귤러핏", "루즈핏"],
                                      horizontal=True)
+            height = st.select_slider("키 (cm)", options=list(range(145, 196)), value=165)
             submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
         if submitted:
             try:
                 with st.spinner("구매·반품 기록과 저장된 리뷰 분석 결과를 확인하고 있습니다..."):
-                    st.session_state.fit_result = run_fit(product_id, user_id, size, preferred_fit)
+                    st.session_state.fit_result = run_fit(product_id, user_id, size, preferred_fit, height)
                 st.switch_page("views/fit_result.py")
             except ValueError as exc:
                 st.error(str(exc))
@@ -91,7 +92,7 @@ if st.session_state.get(f"{review_key}_for") != product_id:
 revealed_reviews = st.session_state[review_key]
 for review in reviews[:revealed_reviews]:
     with st.container(border=True):
-        st.write(f"**{review['user_name']}** · {'★' * review['rating']}{'☆' * (5-review['rating'])}")
+        st.write(f"**{review['user_name']}** ({review['user_height']}cm) · {'★' * review['rating']}{'☆' * (5-review['rating'])}")
         st.write(review["content"])
         st.caption(f"{review['size']} 사이즈 · {review['created_at']}")
 if len(reviews) > revealed_reviews:
