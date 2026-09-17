@@ -3,16 +3,25 @@ from html import escape
 
 import streamlit as st
 
+from app.config import ROOT
+
 COLORS = {"sage": ("#e2eadd", "#809a78"), "sand": ("#efe9de", "#b4a181"),
           "blue": ("#e2e8ef", "#637f9e"), "rose": ("#f0e3e2", "#b99390"),
           "stone": ("#e8e7e0", "#929488"), "ink": ("#e3e5e8", "#515d69")}
+CATEGORY_KEYWORDS = {"상의": "shirt", "아우터": "jacket", "하의": "pants"}
 
 
 def garment(product):
     background, color = COLORS.get(product["color"], COLORS["sage"])
     rating = product.get("rating")
     badge = f'<span class="garment-badge">★ {rating:.1f}</span>' if rating else ""
-    image_url = f"app/static/images/product_{product['id']}.png"
+    local_path = ROOT / "static" / "images" / f"product_{product['id']}.png"
+    if local_path.exists():
+        image_url = f"app/static/images/product_{product['id']}.png"
+    else:
+        # 실사 이미지가 아직 없는 상품은 카테고리 키워드 기반 플레이스홀더로 채웁니다.
+        keyword = CATEGORY_KEYWORDS.get(product["category"], "fashion")
+        image_url = f"https://loremflickr.com/400/500/{keyword}?lock={product['id']}"
     st.html(f'''<div class="garment" style="background:{background};color:{color}">
     <span class="garment-tag">{escape(product['subcategory'])}</span>{badge}
     <img src="{image_url}" alt="{escape(product['name'])}" loading="lazy">
