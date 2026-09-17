@@ -1,14 +1,54 @@
 """공통 표시 컴포넌트. HTML에는 신뢰하지 않는 문자열을 escape합니다."""
+from base64 import b64encode
+from functools import lru_cache
 from html import escape
+from pathlib import Path
 
 import streamlit as st
 
 COLORS = {"sage": ("#e2eadd", "#809a78"), "sand": ("#efe9de", "#b4a181"),
           "blue": ("#e2e8ef", "#637f9e"), "rose": ("#f0e3e2", "#b99390"),
           "stone": ("#e8e7e0", "#929488"), "ink": ("#e3e5e8", "#515d69")}
+IMAGE_ROOT = Path(__file__).resolve().parents[1] / "images"
+
+
+def product_image_path(product_id):
+    """샘플 상품 ID에 대응하는 로컬 카탈로그 이미지 경로를 반환합니다."""
+    return IMAGE_ROOT / f"product-{product_id}.png"
+
+
+@lru_cache(maxsize=16)
+def _image_data_uri(path):
+    image = Path(path)
+    mime = "image/webp" if image.suffix.lower() == ".webp" else "image/png"
+    return f"data:{mime};base64,{b64encode(image.read_bytes()).decode('ascii')}"
+
+
+def product_thumbnail(product):
+    """현재 탭에서 상품을 전환하는 클릭 가능한 소형 썸네일입니다."""
+    thumbnail = IMAGE_ROOT / "thumbnails" / f"product-{product['id']}.webp"
+    if not thumbnail.exists():
+        thumbnail = product_image_path(product["id"])
+    if not thumbnail.exists():
+        return
+    st.html(
+        f'<a class="product-thumb-link" href="?product={product["id"]}" target="_self" '
+        f'aria-label="{escape(product["name"])} 상품 보기">'
+        f'<img src="{_image_data_uri(str(thumbnail))}" alt="{escape(product["name"])}"></a>'
+    )
+
+
+def review_image_path(product_id, variant):
+    """상품별로 준비된 착용 사진 경로를 반환합니다."""
+    return IMAGE_ROOT / f"review-{product_id}-{variant}.png"
 
 
 def garment(product):
+    image = product_image_path(product["id"])
+    if image.exists():
+        st.image(image, width="stretch")
+        return
+
     background, color = COLORS.get(product["color"], COLORS["sage"])
     pants = product["category"] == "하의"
     shape = ("M99 45H201L215 251 157 255 150 130 141 255 84 251Z" if pants else

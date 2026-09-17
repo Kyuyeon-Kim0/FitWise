@@ -1,10 +1,12 @@
+import random
+
 import pandas as pd
 import streamlit as st
 
 from app.db import connect
 from app.repository import list_products, list_users
 from app.services import browse_detail, run_fit, run_review
-from app.ui import garment, show_review
+from app.ui import garment, product_thumbnail, review_image_path, show_review
 
 st.caption("COLLECTION / PRODUCT DETAIL")
 with connect() as connection:
@@ -14,37 +16,50 @@ if not catalog:
     st.info("등록된 상품이 없습니다.")
     st.stop()
 names = {p["id"]: p["name"] for p in catalog}
-selected = st.session_state.get("selected_product", catalog[0]["id"])
 ids = list(names)
-product_id = st.selectbox("상품", ids, index=ids.index(selected) if selected in ids else 0,
-                          format_func=names.get, key="detail_product")
+query_product = st.query_params.get("product")
+try:
+    query_product = int(query_product) if query_product is not None else None
+except (TypeError, ValueError):
+    query_product = None
+selected = query_product if query_product in ids else st.session_state.get("selected_product", ids[0])
+product_id = selected if selected in ids else ids[0]
 st.session_state.selected_product = product_id
 product, reviews = browse_detail(product_id)
-left, right = st.columns([1, 1.2], gap="large")
-with left:
-    garment(product)
+
+thumbnail_column, image_column, right = st.columns([0.22, 0.9, 1.2], gap="medium")
+with thumbnail_column:
+    with st.container(height=560, border=False, key="product_thumbnail_rail"):
+        for item in catalog:
+            thumbnail_key = "thumb_selected" if item["id"] == product_id else f"thumb_{item['id']}"
+            with st.container(key=thumbnail_key):
+                product_thumbnail(item)
+with image_column:
+    with st.container(height=560, border=False, key="product_image_panel"):
+        garment(product)
 with right:
-    st.caption(f"{product['category']} / {product['subcategory']}")
-    st.title(product["name"])
-    st.subheader(f"₩{product['price']:,}")
-    st.write(product["description"])
-    st.caption(f"리뷰 {len(reviews)}건 · 샘플 상품")
-    if not users:
-        st.warning("분석할 사용자가 없습니다.")
-    else:
-        user_names = {u["id"]: f"{u['name']} · {u['preferred_fit']} 핏 선호" for u in users}
-        with st.form(f"fit_form_{product_id}"):
-            user_id = st.selectbox("데모 사용자", list(user_names), format_func=user_names.get)
-            size = st.radio("사이즈 선택", product["sizes"], horizontal=True)
-            submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
-        if submitted:
-            try:
-                with st.spinner("리뷰와 구매·반품 기록을 분석하고 있습니다..."):
-                    st.session_state.fit_result = run_fit(product_id, user_id, size)
-                st.switch_page("views/fit_result.py")
-            except ValueError as exc:
-                st.error(str(exc))
-        st.caption("규칙 기반 분석 · API 미연결 · 내부 적합도 지표")
+    with st.container(height=560, border=False, key="product_detail_panel"):
+        st.caption(f"{product['category']} / {product['subcategory']}")
+        st.title(product["name"])
+        st.subheader(f"₩{product['price']:,}")
+        st.write(product["description"])
+        st.caption(f"리뷰 {len(reviews)}건 · 샘플 상품")
+        if not users:
+            st.warning("분석할 사용자가 없습니다.")
+        else:
+            user_names = {u["id"]: f"{u['name']} · {u['preferred_fit']} 핏 선호" for u in users}
+            with st.form(f"fit_form_{product_id}"):
+                user_id = st.selectbox("데모 사용자", list(user_names), format_func=user_names.get)
+                size = st.radio("사이즈 선택", product["sizes"], horizontal=True)
+                submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
+            if submitted:
+                try:
+                    with st.spinner("리뷰와 구매·반품 기록을 분석하고 있습니다..."):
+                        st.session_state.fit_result = run_fit(product_id, user_id, size)
+                    st.switch_page("views/fit_result.py")
+                except ValueError as exc:
+                    st.error(str(exc))
+            st.caption("규칙 기반 분석 · API 미연결 · 내부 적합도 지표")
 
 st.subheader("사이즈 가이드")
 st.caption("단면 기준 · cm · 가상 실측 데이터")
@@ -66,8 +81,29 @@ if saved_review:
 st.subheader(f"고객 리뷰 ({len(reviews)})")
 if not reviews:
     st.info("아직 리뷰가 없습니다.")
-for review in reviews:
-    with st.container(border=True):
-        st.write(f"**{review['user_name']}** · {'★' * review['rating']}{'☆' * (5-review['rating'])}")
-        st.write(review["content"])
-        st.caption(f"{review['size']} 사이즈 · {review['created_at']}")
+else:
+    st.caption("착용 사진과 후기를 좌우로 넘겨 확인해 보세요.")
+    review_ids = [review["id"] for review in reviews]
+    photo_key = f"review_photo_ids_{product_id}"
+    saved_photo_ids = st.session_state.get(photo_key, [])
+    if len(saved_photo_ids) != min(2, len(review_ids)) or not set(saved_photo_ids).issubset(review_ids):
+        saved_photo_ids = random.sample(review_ids, min(2, len(review_ids)))
+        st.session_state[photo_key] = saved_photo_ids
+    photo_variants = {review_id: variant for review_id, variant in zip(saved_photo_ids, ("a", "b"))}
+
+    with st.container(horizontal=True, gap="medium", key="review_scroller"):
+        for review in reviews:
+            with st.container(border=True, width=300):
+                variant = photo_variants.get(review["id"])
+                if variant:
+                    image = review_image_path(product_id, variant)
+                    if image.exists():
+                        st.image(image, width="stretch")
+                    else:
+                        st.html('<div class="review-image-placeholder">착용 사진 없음</div>')
+                else:
+                    st.html('<div class="review-image-placeholder">착용 사진 없음</div>')
+                st.write(f"**{review['user_name']}**")
+                st.write(f"{'★' * review['rating']}{'☆' * (5-review['rating'])}")
+                st.write(review["content"])
+                st.caption(f"{review['size']} 사이즈 · {review['created_at']}")
