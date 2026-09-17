@@ -49,6 +49,21 @@ class FitWiseTest(unittest.TestCase):
         self.assertEqual(result["positive_keywords"][0]["count"], 1)
         self.assertIsNone(analyze([])["positive_pct"])
 
+    def test_review_negation_and_extended_keywords(self):
+        result = analyze([
+            {"rating": 5, "content": "디자인이 예쁘지 않아요. 그래도 재질은 괜찮아요."},
+            {"rating": 5, "content": "하나도 안 편안해요."},
+            {"rating": 4, "content": "허리가 커서 벨트가 필요해요."},
+            {"rating": 4, "content": "착용감은 편안한데 사이즈가 작아요."},
+        ])
+        self.assertEqual(result["positive_keywords"], [{"keyword": "착용감", "count": 1}])
+        negative_labels = {item["keyword"] for item in result["negative_keywords"]}
+        self.assertIn("허리 큼", negative_labels)
+        self.assertIn("사이즈 작음", negative_labels)
+        # 허리 불만은 계약(CONTRACTS.md)의 size_complaint_pct 계산 대상이 아니므로
+        # 사이즈 작음 리뷰 1건만 반영되어 4건 중 25%여야 합니다.
+        self.assertEqual(result["size_complaint_pct"], 25)
+
     def test_incompatible_database_is_preserved(self):
         old_path = Path(self.directory.name) / "old.db"
         with connect(old_path) as connection:
