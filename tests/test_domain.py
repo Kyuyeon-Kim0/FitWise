@@ -82,16 +82,17 @@ class FitWiseTest(unittest.TestCase):
         with connect(self.database) as connection:
             connection.execute("DELETE FROM returns")
             connection.execute("DELETE FROM orders")
+            connection.execute("DELETE FROM reviews")
             connection.executemany("INSERT INTO orders VALUES (?,?,?,?,?)", [
                 (1, 1, 1, "M", "2026-01-01"), (2, 1, 1, "M", "2026-01-02"),
                 (3, 2, 1, "M", "2026-01-03")])
             connection.execute("INSERT INTO returns VALUES (1,2,'사이즈','2026-01-05')")
+            connection.execute("INSERT INTO reviews(user_id,product_id,size,rating,content,created_at) VALUES (1,1,'M',5,'좋아요','2026-01-01')")
             connection.commit()
             review = analyze([{"rating": 5, "content": "좋아요"}])
-            result = fit_analyze(connection, 1, get_product(connection, 1), "M", review)
-        # 50*.30 + 66.7*.20 + 66.7*.25 + 100*.25 = 70.015
-        self.assertEqual(result["score"], 70)
-        self.assertEqual(result["metrics"][2]["value"], 66.7)
+            result = fit_analyze(connection, 1, get_product(connection, 1), "M", review, 165, 60)
+        # 선택 사이즈 안정성은 체형 유사 구매 이력에 가중치를 둡니다.
+        self.assertEqual(result["score"], 68)
         self.assertTrue(result["limited_data"])
 
     def test_missing_data_is_not_perfect_success(self):
@@ -100,14 +101,14 @@ class FitWiseTest(unittest.TestCase):
             connection.execute("DELETE FROM orders")
             connection.execute("DELETE FROM reviews")
             connection.commit()
-        result = run_fit(1, 1, "M", "레귤러핏", 165, self.database)["result"]
+        result = run_fit(1, 1, "M", "레귤러핏", 165, 60, self.database)["result"]
         self.assertIsNone(result["score"])
         self.assertTrue(all(m["value"] is None for m in result["metrics"]))
         with connect(self.database) as connection:
             connection.execute("INSERT INTO reviews(user_id,product_id,size,rating,content,created_at) VALUES (1,1,'M',5,'좋아요','2026-01-01')")
             connection.execute("DELETE FROM review_analysis WHERE product_id=1")
             connection.commit()
-        result = run_fit(1, 1, "M", "레귤러핏", 165, self.database)["result"]
+        result = run_fit(1, 1, "M", "레귤러핏", 165, 60, self.database)["result"]
         self.assertEqual(result["score"], 100)
         self.assertEqual(result["metrics"][-1]["effective_weight_pct"], 100)
         self.assertTrue(result["limited_data"])
@@ -119,7 +120,7 @@ class FitWiseTest(unittest.TestCase):
                                                       (1, "M", "알 수 없음", 165), (1, "M", "레귤러핏", 130),
                                                       (1, "M", "레귤러핏", 210)):
             with self.assertRaises(ValueError):
-                run_fit(1, user_id, size, preferred_fit, height, self.database)
+                run_fit(1, user_id, size, preferred_fit, height, 60, self.database)
         with self.assertRaises(ValueError):
             run_review(999, self.database)
         with connect(self.database) as connection:
@@ -128,7 +129,7 @@ class FitWiseTest(unittest.TestCase):
     def test_pipeline_measurements_and_correlation(self):
         browse_products(database=self.database)
         run_review(1, self.database)
-        saved = run_fit(1, 1, "M", "레귤러핏", 165, self.database)
+        saved = run_fit(1, 1, "M", "레귤러핏", 165, 60, self.database)
         with connect(self.database) as connection:
             data = dashboard_data(connection)
             agents = connection.execute("SELECT * FROM agent_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
@@ -148,7 +149,7 @@ class FitWiseTest(unittest.TestCase):
     def test_analysis_failure_is_logged(self):
         with patch("app.services.analyze_reviews", side_effect=RuntimeError("test failure")):
             with self.assertRaises(RuntimeError):
-                run_fit(1, 1, "M", "레귤러핏", 165, self.database)
+                run_fit(1, 1, "M", "레귤러핏", 165, 60, self.database)
         with connect(self.database) as connection:
             agents = connection.execute("SELECT status,error_type FROM agent_logs").fetchall()
             resources = connection.execute("SELECT phase,status FROM resource_logs").fetchall()

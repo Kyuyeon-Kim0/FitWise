@@ -23,6 +23,22 @@ def connect(database=None):
 
 def initialize(database=None, seed=True):
     with connect(database) as connection:
+        # 키 컬럼 도입 전 DB의 기존 사용자 데이터는 기본값으로 보존합니다.
+        user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
+        if user_columns and "height" not in user_columns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN height INTEGER NOT NULL DEFAULT 165 "
+                "CHECK(height BETWEEN 140 AND 200)"
+            )
+            connection.commit()
+        user_columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)")}
+        if user_columns and "weight" not in user_columns:
+            connection.execute(
+                "ALTER TABLE users ADD COLUMN weight INTEGER NOT NULL DEFAULT 60 "
+                "CHECK(weight BETWEEN 35 AND 180)"
+            )
+            connection.commit()
+
         # 이전 DB의 리뷰 캐시는 상품당 하나였으므로 baseline 결과로 보존해 이전합니다.
         review_columns = {row["name"] for row in connection.execute("PRAGMA table_info(review_analysis)")}
         if review_columns and "mode" not in review_columns:
@@ -84,7 +100,7 @@ def initialize(database=None, seed=True):
 
         # 다른 개발 작업의 기존 DB를 자동 변경하지 않습니다.
         expected = {
-            "users": {"id", "name", "preferred_fit", "height"},
+            "users": {"id", "name", "preferred_fit", "height", "weight"},
             "products": {"id", "subcategory", "sizes", "measurements"},
             "orders": {"id", "user_id", "product_id", "size", "ordered_at"},
             "returns": {"id", "order_id", "reason", "returned_at"},
@@ -189,8 +205,9 @@ def seed_demo(connection):
     ]
     reviews_per_product = 24
     with connection:
-        connection.executemany("INSERT INTO users VALUES (?,?,?,?)", [
-            (uid, name, fit, height) for uid, (name, fit, height) in enumerate(users, 1)])
+        connection.executemany("INSERT INTO users VALUES (?,?,?,?,?)", [
+            (uid, name, fit, height, round((height - 100) * 0.9 + ((uid % 5) - 2) * 2))
+            for uid, (name, fit, height) in enumerate(users, 1)])
         user_ids = list(range(1, len(users) + 1))
         for pid, item in enumerate(catalog, 1):
             measurements = {}

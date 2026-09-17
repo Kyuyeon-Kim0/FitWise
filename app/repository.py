@@ -41,7 +41,7 @@ def get_product(connection, product_id):
 
 def list_reviews(connection, product_id):
     return [dict(row) for row in connection.execute(
-        """SELECT r.*,u.name AS user_name,u.height AS user_height FROM reviews r
+        """SELECT r.*,u.name AS user_name,u.height AS user_height,u.weight AS user_weight FROM reviews r
            JOIN users u ON u.id=r.user_id
            WHERE product_id=? ORDER BY r.created_at DESC,r.id DESC""", (product_id,))]
 

@@ -17,7 +17,7 @@ INSTRUCTIONS = """당신은 FitWise 구매 적합도 상담 Agent입니다.
 }"""
 
 
-def advise(product, size, preferred_fit, height, fit_result, review_result):
+def advise(product, size, preferred_fit, height, weight, fit_result, review_result):
     """API 키가 설정된 경우에만 개인화된 자연어 권고를 생성합니다."""
     settings = get_settings()
     if not settings.api_key or not settings.model:
@@ -32,6 +32,7 @@ def advise(product, size, preferred_fit, height, fit_result, review_result):
         "selected_size": size,
         "user_selected_preferred_fit": preferred_fit,
         "user_height_cm": height,
+        "user_weight_kg": weight,
         "fit_score": fit_result["score"],
         "fit_label": fit_result["label"],
         "metrics": [{"label": metric["label"], "value": metric["value"],
