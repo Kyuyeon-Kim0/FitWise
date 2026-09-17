@@ -45,6 +45,37 @@ class FitWiseTest(unittest.TestCase):
             with self.assertRaises(sqlite3.IntegrityError):
                 connection.execute("INSERT INTO returns(order_id,reason,returned_at) VALUES (?,'test','2026-09-01')", (order_id,))
 
+    def test_legacy_resource_logs_are_migrated_without_data_loss(self):
+        with connect(self.database) as connection:
+            connection.execute("DROP INDEX IF EXISTS idx_resources_operation")
+            connection.execute("DROP INDEX IF EXISTS idx_resources_request")
+            connection.execute("ALTER TABLE resource_logs RENAME TO resource_logs_current")
+            connection.execute("""CREATE TABLE resource_logs (
+                id INTEGER PRIMARY KEY, request_id TEXT NOT NULL UNIQUE,
+                operation TEXT NOT NULL CHECK(operation IN ('browse','review','fit')),
+                cpu_percent REAL NOT NULL, cpu_ms REAL NOT NULL,
+                memory_before_mb REAL NOT NULL, memory_after_mb REAL NOT NULL,
+                memory_delta_mb REAL NOT NULL, processing_ms REAL NOT NULL,
+                response_ms REAL NOT NULL, status TEXT NOT NULL CHECK(status IN ('success','error')),
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            )""")
+            connection.execute("""INSERT INTO resource_logs
+                (request_id,operation,cpu_percent,cpu_ms,memory_before_mb,memory_after_mb,
+                 memory_delta_mb,processing_ms,response_ms,status)
+                VALUES ('legacy','browse',1,1,100,101,1,5,6,'success')""")
+            connection.execute("DROP TABLE resource_logs_current")
+            connection.commit()
+
+        initialize(self.database, seed=False)
+
+        with connect(self.database) as connection:
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(resource_logs)")}
+            row = connection.execute(
+                "SELECT request_id,phase,status FROM resource_logs WHERE request_id='legacy'"
+            ).fetchone()
+        self.assertIn("phase", columns)
+        self.assertEqual(dict(row), {"request_id": "legacy", "phase": "completed", "status": "success"})
+
     def test_review_counts_and_empty(self):
         result = analyze([{"rating": 5, "content": "편안해요. 편안해요."},
                           {"rating": 3, "content": "소재가 얇아요."},

@@ -8,6 +8,10 @@ from contextlib import contextmanager
 from app.config import get_settings
 
 
+# 스키마 마이그레이션을 추가할 때 증가시켜 Streamlit의 DB 준비 캐시를 무효화합니다.
+SCHEMA_VERSION = 2
+
+
 @contextmanager
 def connect(database=None):
     path = Path(database) if database is not None else get_settings().database

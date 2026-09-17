@@ -2,20 +2,21 @@
 import streamlit as st
 
 from app.config import ROOT, get_settings
-from app.db import initialize
+from app.db import SCHEMA_VERSION, initialize
 
 st.set_page_config(page_title="FitWise · 나에게 맞는 선택", page_icon="👕", layout="wide")
 
 
 @st.cache_resource
-def prepare_database(path):
+def prepare_database(path, schema_version):
     # DB 연결 자체를 캐시하지 않습니다. 세션/스레드마다 독립 연결을 엽니다.
+    # schema_version은 마이그레이션 추가 시 기존 캐시를 무효화합니다.
     initialize(path)
 
 
 settings = get_settings()
 try:
-    prepare_database(str(settings.database))
+    prepare_database(str(settings.database), SCHEMA_VERSION)
 except ValueError as exc:
     st.error(str(exc))
     st.stop()
