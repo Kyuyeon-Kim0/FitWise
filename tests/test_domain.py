@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import tempfile
@@ -10,8 +11,9 @@ from app.fit_agent import analyze as fit_analyze
 from app.llm import LLMError
 from app.monitoring import dashboard_data
 from app.repository import get_product
-from app.review_agent import analyze, analyze_api
-from app.services import browse_products, run_fit, run_review
+from app.review_agent import analyze
+from app.review_agent.qa_agent import answer as ask_review_qa
+from app.services import ask_review_agent, browse_products, run_fit, run_review
 
 
 class FitWiseTest(unittest.TestCase):
@@ -169,33 +171,117 @@ class FitWiseTest(unittest.TestCase):
                          [("requested", "started"), ("completed", "error")])
         self.assertEqual(data["summary"], [])
 
-    def test_analyze_api_ignores_unknown_labels_and_indices(self):
-        reviews = [{"rating": 5, "content": "착용감이 좋아요."}, {"rating": 1, "content": "사이즈가 커요."}]
-        fake_response = [
-            {"index": 0, "positive_labels": ["착용감", "존재하지않는라벨"], "negative_labels": []},
-            {"index": 1, "positive_labels": [], "negative_labels": ["사이즈 큼"]},
-            {"index": 99, "positive_labels": ["마감"], "negative_labels": []},
-        ]
-        with patch("app.review_agent.classify_reviews", return_value=fake_response) as mock_classify:
-            result = analyze_api(reviews, "fake-key", "fake-model")
-        mock_classify.assert_called_once()
-        self.assertEqual(result["mode"], "api-fake-model")
-        self.assertEqual(result["positive_keywords"], [{"keyword": "착용감", "count": 1}])
-        self.assertEqual(result["negative_keywords"], [{"keyword": "사이즈 큼", "count": 1}])
-        self.assertEqual(result["size_complaint_pct"], 50)
+    @staticmethod
+    def _tool_call(call_id, name, arguments):
+        from unittest.mock import MagicMock
+        call = MagicMock()
+        call.id = call_id
+        call.function.name = name
+        call.function.arguments = json.dumps(arguments)
+        return call
 
-    def test_run_review_api_requires_key(self):
+    @staticmethod
+    def _respond_call(**fields):
+        base = {"answer": "답변입니다.", "overall_stance": "mixed", "stance_reason": "근거",
+               "fit_assessment": "unknown", "recommend_alternatives": False, "recommended_product_ids": []}
+        base.update(fields)
+        return FitWiseTest._tool_call("call_respond", "respond", base)
+
+    def test_qa_agent_calls_tool_then_answers(self):
+        from unittest.mock import MagicMock
+
+        reviews = [{"rating": 2, "content": "허리가 작아서 불편해요.", "size": "M"},
+                  {"rating": 5, "content": "착용감이 좋아요.", "size": "M"}]
+        product = {"name": "테스트 상품", "category": "하의", "subcategory": "슬랙스",
+                  "description": "설명", "sizes": ["S", "M", "L"], "measurements": {}}
+
+        search_call = self._tool_call("call_1", "search_reviews", {"keyword": "허리"})
+        first_response = MagicMock(choices=[MagicMock(message=MagicMock(content=None, tool_calls=[search_call]))])
+        respond_call = self._respond_call(answer="허리가 작다는 리뷰가 1건 있습니다.", overall_stance="negative",
+                                          fit_assessment="poor_fit", recommend_alternatives=True,
+                                          recommended_product_ids=[7])
+        final_response = MagicMock(choices=[MagicMock(message=MagicMock(content=None, tool_calls=[respond_call]))])
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [first_response, final_response]
+        with patch("openai.OpenAI", return_value=mock_client):
+            result = ask_review_qa("허리 사이즈 어때?", product, reviews, [], "fake-key", "fake-model")
+
+        self.assertEqual(result["answer"], "허리가 작다는 리뷰가 1건 있습니다.")
+        self.assertEqual(result["overall_stance"], "negative")
+        self.assertEqual(result["fit_assessment"], "poor_fit")
+        self.assertEqual(result["recommended_product_ids"], [7])
+        self.assertEqual(result["tools_used"], ["search_reviews"])
+        self.assertEqual(mock_client.chat.completions.create.call_count, 2)
+
+    def test_qa_agent_falls_back_to_sample_when_no_exact_keyword_match(self):
+        import json
+        from unittest.mock import MagicMock
+
+        reviews = [{"rating": r, "content": f"리뷰 내용 {r}", "size": "M"}
+                  for r in [5, 4, 3, 2, 1, 5, 4, 3, 2, 1, 5]]
+        product = {"name": "테스트 상품", "category": "상의", "subcategory": "셔츠",
+                  "description": "설명", "sizes": ["S", "M", "L"], "measurements": {}}
+
+        search_call = self._tool_call("call_1", "search_reviews", {"keyword": "통기성"})
+        first_response = MagicMock(choices=[MagicMock(message=MagicMock(content=None, tool_calls=[search_call]))])
+        respond_call = self._respond_call(answer="통기성을 직접 언급한 리뷰는 없지만 참고할 만한 내용을 찾았어요.")
+        final_response = MagicMock(choices=[MagicMock(message=MagicMock(content=None, tool_calls=[respond_call]))])
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [first_response, final_response]
+        with patch("openai.OpenAI", return_value=mock_client):
+            ask_review_qa("통기성 어때?", product, reviews, [], "fake-key", "fake-model")
+
+        second_call_messages = mock_client.chat.completions.create.call_args_list[1].kwargs["messages"]
+        tool_message = next(m for m in second_call_messages if m["role"] == "tool")
+        payload = json.loads(tool_message["content"])
+        self.assertFalse(payload["exact_match"])
+        self.assertGreater(len(payload["reviews"]), 0)
+
+    def test_qa_agent_recommends_alternatives_via_tool(self):
+        from unittest.mock import MagicMock
+
+        reviews = [{"rating": 1, "content": "사이즈가 안 맞아서 반품했어요. 허리가 너무 작아요.", "size": "S"}]
+        product = {"name": "테스트 상품", "category": "하의", "subcategory": "슬랙스",
+                  "description": "설명", "sizes": ["S", "M", "L"], "measurements": {}}
+        catalog = [{"id": 7, "name": "대체 상품", "price": 50000, "subcategory": "슬랙스",
+                   "rating": 4.5, "review_count": 10}]
+
+        alt_call = self._tool_call("call_1", "find_alternative_products", {})
+        first_response = MagicMock(choices=[MagicMock(message=MagicMock(content=None, tool_calls=[alt_call]))])
+        respond_call = self._respond_call(fit_assessment="poor_fit", recommend_alternatives=True,
+                                          recommended_product_ids=[7])
+        final_response = MagicMock(choices=[MagicMock(message=MagicMock(content=None, tool_calls=[respond_call]))])
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.side_effect = [first_response, final_response]
+        with patch("openai.OpenAI", return_value=mock_client):
+            result = ask_review_qa("이거 안 맞으면 다른 거 추천해줘", product, reviews, catalog,
+                                   "fake-key", "fake-model", size="S", height=170, weight=65)
+
+        second_call_messages = mock_client.chat.completions.create.call_args_list[1].kwargs["messages"]
+        tool_message = next(m for m in second_call_messages if m["role"] == "tool")
+        self.assertIn("대체 상품", tool_message["content"])
+        self.assertEqual(result["recommended_product_ids"], [7])
+        self.assertTrue(result["recommend_alternatives"])
+
+    def test_qa_agent_requires_question(self):
+        with self.assertRaises(LLMError):
+            ask_review_qa("   ", {}, [], [], "fake-key", "fake-model")
+
+    def test_ask_review_agent_requires_key(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
             with self.assertRaises(ValueError):
-                run_review(1, self.database, mode="api")
+                ask_review_agent(1, "허리 사이즈 어때?", self.database)
         with connect(self.database) as connection:
             self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 0)
 
-    def test_run_review_api_failure_is_logged(self):
+    def test_ask_review_agent_failure_is_logged(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "fake-key", "OPENAI_MODEL": "fake-model"}):
-            with patch("app.services.analyze_reviews_api", side_effect=LLMError("timeout")):
+            with patch("app.services.ask_review_qa", side_effect=LLMError("timeout")):
                 with self.assertRaises(LLMError):
-                    run_review(1, self.database, mode="api")
+                    ask_review_agent(1, "허리 사이즈 어때?", self.database)
         with connect(self.database) as connection:
             agents = connection.execute("SELECT status FROM agent_logs").fetchall()
         self.assertEqual([row["status"] for row in agents], ["started", "error"])

@@ -1,7 +1,6 @@
-"""평점/키워드 기반 baseline과 실제 OpenAI 기반 분석. 두 경로 모두 반환 규격을 동일하게 유지합니다."""
+"""평점/키워드 기반 baseline 리뷰 분석. 정해진 규칙으로 빠르고 저렴하게 통계를 냅니다.
+자유 질문에 답하는 AI 에이전트는 app/review_agent/qa_agent.py를 참고하세요."""
 from collections import Counter
-
-from app.llm import classify_reviews
 
 POSITIVE = {"착용감": ("착용감이 좋아", "편안"), "디자인": ("디자인도 예", "디자인이 예", "디자인은 좋아"),
             "가벼움": ("가벼", "가볍"), "마감": ("마감이 좋아",), "부드러움": ("부드러",)}
@@ -76,26 +75,3 @@ def analyze(reviews):
         if row_negative_labels & SIZE_COMPLAINT_LABELS:
             complaints += 1
     return _finalize("rule-based-v2", rows, positive, negative, complaints)
-
-
-def analyze_api(reviews, api_key, model):
-    """실제 OpenAI 모델이 리뷰별 긍정/부정 라벨을 분류하고, 집계·비율은 이 함수가 Python으로 계산합니다."""
-    rows = [dict(row) for row in reviews]
-    positive, negative = Counter(), Counter()
-    complaints = 0
-    if rows:
-        classifications = classify_reviews(rows, api_key, model, list(POSITIVE), list(NEGATIVE))
-        by_index = {item.get("index"): item for item in classifications if isinstance(item.get("index"), int)}
-        for i in range(len(rows)):
-            item = by_index.get(i, {})
-            row_negative_labels = set()
-            for label in item.get("positive_labels") or []:
-                if label in POSITIVE:
-                    positive[label] += 1
-            for label in item.get("negative_labels") or []:
-                if label in NEGATIVE:
-                    negative[label] += 1
-                    row_negative_labels.add(label)
-            if row_negative_labels & SIZE_COMPLAINT_LABELS:
-                complaints += 1
-    return _finalize(f"api-{model}", rows, positive, negative, complaints)
