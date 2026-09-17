@@ -5,6 +5,7 @@ from app.fit_agent import analyze as analyze_fit
 from app.monitoring import measure
 from app.repository import get_product, list_products, list_reviews
 from app.review_agent import analyze as analyze_reviews
+from app.review_agent import analyze_api as analyze_reviews_api
 
 
 def ensure_baseline():
@@ -24,12 +25,21 @@ def browse_detail(product_id, database=None):
             return get_product(connection, product_id), list_reviews(connection, product_id)
 
 
-def run_review(product_id, database=None):
-    ensure_baseline()
+def run_review(product_id, database=None, *, mode=None):
+    settings = get_settings()
+    mode = mode or settings.analysis_mode
+    if mode not in ("baseline", "api"):
+        raise ValueError("지원하지 않는 분석 모드입니다.")
+    if mode == "api" and not settings.api_key:
+        raise ValueError("OpenAI API 키가 설정되지 않았습니다. baseline 모드를 사용하세요.")
     with connect(database) as connection:
         get_product(connection, product_id)
         with measure(connection, "review") as task:
-            result = task.run_agent("review", lambda: analyze_reviews(list_reviews(connection, product_id)), product_id)
+            reviews = list_reviews(connection, product_id)
+            if mode == "api":
+                result = task.run_agent("review", lambda: analyze_reviews_api(reviews, settings.api_key, settings.model), product_id)
+            else:
+                result = task.run_agent("review", lambda: analyze_reviews(reviews), product_id)
         return {"result": result, "request_id": task.request_id}
 
 

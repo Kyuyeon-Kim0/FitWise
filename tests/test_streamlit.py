@@ -25,7 +25,7 @@ class StreamlitFlowTest(unittest.TestCase):
                 # AppTest는 st.switch_page로 전환한 뒤 다음 run의 page hash를
                 # 자동 유지하지 않으므로 테스트 대상을 명시합니다.
                 app.switch_page("views/product_detail.py").run()
-                app.button(key="run_review").click().run()
+                app.button(key="run_review_baseline").click().run()
                 self.assertEqual(len(app.exception), 0)
                 with connect(database) as connection:
                     self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 1)
