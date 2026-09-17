@@ -2,10 +2,10 @@
 h1,h2,h3 { letter-spacing: -.045em; }
 h1 { font-weight: 750; }
 [data-testid="stSidebar"] { border-right: 1px solid #dce3d7; }
-.fw-hero { position:relative; width:100%; height:540px; border-radius:18px; overflow:hidden; background:#f7f3ee; display:flex; align-items:center; justify-content:center; margin:10px 0 24px; }
+.fw-hero { position:relative; width:100%; height:540px; border-radius:18px; overflow:hidden; background:#23392e; display:flex; align-items:center; justify-content:center; margin:10px 0 24px; }
 .fw-hero .title { position:relative; z-index:10; text-align:center; }
-.fw-hero .title h1 { font-size:clamp(32px,5vw,64px); line-height:.95; letter-spacing:-2px; color:#204a36; font-weight:750; }
-.fw-hero .title p { margin-top:14px; font-size:15px; color:#4d5d52; text-shadow:0 0 10px #f7f3ee, 0 0 10px #f7f3ee, 0 0 6px #f7f3ee; }
+.fw-hero .title h1 { font-size:clamp(64px,13vw,150px); line-height:.85; letter-spacing:-3px; color:#fff; mix-blend-mode:difference; font-weight:800; }
+.fw-hero .title p { margin-top:14px; font-size:15px; color:#eef2eb; text-shadow:0 0 10px #23392e, 0 0 10px #23392e, 0 0 6px #23392e; }
 .fw-hero .shop-btn { display:inline-block; margin-top:18px; padding:12px 24px; border-radius:999px; background:#21634b; color:#fff; text-decoration:none; font-size:14px; transition:transform .25s ease; }
 .fw-hero .shop-btn:hover { transform:scale(1.06); }
 .fw-hero .product { position:absolute; width:230px; height:290px; object-fit:cover; border-radius:18px; box-shadow:0 14px 30px rgba(0,0,0,.15); opacity:0; animation:fw-hero-enter 1.2s cubic-bezier(.2,.8,.2,1) forwards; }

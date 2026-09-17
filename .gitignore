@@ -13,3 +13,4 @@ data/**/*.db
 data/**/*.db-*
 .coverage
 htmlcov/
+.streamlit_run.log

@@ -46,3 +46,18 @@ def show_review(result):
         for comment in result["fit_comments"]:
             st.write(f"• {comment}")
     st.caption("긍정 4~5점 · 중립 3점 · 부정 1~2점. 키워드 분석은 문맥과 부정 표현을 오해할 수 있습니다.")
+    advisor = result.get("advisor")
+    if advisor:
+        st.markdown("**AI Review Advisor 조언**")
+        st.info(advisor["recommendation"])
+        st.write(advisor["explanation"])
+        st.caption(f"판단 신뢰도: {advisor['confidence']}")
+        if advisor["risk_signals"]:
+            st.write("주의 신호: " + " · ".join(advisor["risk_signals"]))
+        if advisor["next_actions"]:
+            st.write("다음 행동: " + " · ".join(advisor["next_actions"]))
+    elif result.get("advisor_error"):
+        st.warning(
+            "AI Review Advisor를 사용할 수 없어 분석 결과만 표시합니다. "
+            f"오류 유형: {result['advisor_error']}"
+        )

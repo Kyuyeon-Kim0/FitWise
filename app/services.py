@@ -8,6 +8,7 @@ from app.repository import (get_product, get_review_analysis, list_products, lis
                             save_review_analysis)
 from app.review_agent import analyze as analyze_reviews
 from app.review_agent import analyze_api as analyze_reviews_api
+from app.review_agent.advisor import advise as advise_reviews
 
 
 def ensure_baseline():
@@ -43,6 +44,14 @@ def get_or_run_review_analysis(connection, product_id, mode, task=None, user_id=
         callback = lambda: analyze_reviews(reviews)
     result = (task.run_agent("review", callback, product_id, user_id, size, top_level=top_level)
               if task is not None else callback())
+    if top_level:
+        # Fit의 내부 baseline 조회에는 조언을 생성하지 않아 불필요한 API 호출을 피합니다.
+        try:
+            result["advisor"] = advise_reviews(get_product(connection, product_id), result)
+            result["advisor_error"] = None
+        except Exception as exc:
+            result["advisor"] = None
+            result["advisor_error"] = type(exc).__name__
     save_review_analysis(connection, product_id, mode, result)
     return result, "generated"
 
