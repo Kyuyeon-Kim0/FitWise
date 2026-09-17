@@ -1,5 +1,111 @@
 # FitWise 👕
 
+## 🚀 현재 실행 버전: Python + Streamlit
+
+아래 기획을 바탕으로 실행 가능한 로컬 개발 기반을 구성했습니다. **프런트엔드는 Streamlit**이며,
+문서 하단의 HTML/CSS/JavaScript 및 templates 구조는 최초 기획안입니다.
+현재 파일 구조와 팀 개발 순서는 `docs/DEVELOPMENT_PLAN.md`, 함수·DB 규격은 `docs/CONTRACTS.md`를 기준으로 합니다.
+
+### VS Code에서 실행 (Windows PowerShell / Python 3.12 권장)
+
+VS Code의 **파일 → 폴더 열기**에서 `C:\FitWise`를 엽니다.
+
+```powershell
+cd C:\FitWise
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
+```
+
+브라우저에서 http://127.0.0.1:8501 을 엽니다. 중지는 터미널에서 `Ctrl+C`입니다.
+가상환경 활성화 없이 실행하므로 PowerShell 실행 정책을 변경할 필요가 없습니다.
+Python 확장을 설치하고 `Python: Select Interpreter`에서 `.venv\Scripts\python.exe`를 선택하면
+**F5 → FitWise: 로컬 서버**로도 실행할 수 있습니다.
+이미 가상환경과 의존성을 설치했다면 마지막 실행 명령만 사용합니다.
+
+### 환경 변수와 API 키
+
+이 작업 폴더에는 `.env`를 생성했습니다. 새로 clone한 개발자는 다음 명령을 한 번 실행합니다.
+기존 `.env`가 있다면 덮어쓰지 마세요.
+
+```powershell
+Copy-Item .env.example .env
+```
+
+```dotenv
+OPENAI_API_KEY=
+OPENAI_MODEL=
+FITWISE_ANALYSIS_MODE=baseline
+FITWISE_DB_PATH=data/demo/fashion_shop.db
+```
+
+- 개인 API 키는 `.env`의 `OPENAI_API_KEY`에 입력합니다. `.env`는 Git에서 제외됩니다.
+- 키 이름은 [OpenAI 공식 문서](https://developers.openai.com/api/docs/quickstart)의 환경 변수 규격을 따릅니다.
+- 현재는 **평점·키워드·가중합 기반 baseline**입니다. 키/모델을 입력하는 것만으로 실제 모델이 호출되지는 않습니다.
+- 실제 API 클라이언트 연결, 모델 선택, 타임아웃/재시도 및 출력 검증은 Review 브랜치의 후속 작업입니다.
+- `FITWISE_ANALYSIS_MODE`는 현재 `baseline`만 지원합니다. 다른 값은 명시적으로 안내하고 분석을 중단합니다.
+- `.env`를 수정한 뒤 서버를 재시작하세요. 같은 이름의 OS 환경 변수가 있으면 OS 값이 우선합니다.
+- API 키 원문은 UI·분석 결과·로그에 표시하지 않습니다.
+
+### 현재 가능한 기능
+
+- 상품 6개 / 사용자 3명 / 구매 144건 / 리뷰 48건 및 반품 샘플 자동 생성.
+- 전체·상의·아우터·하의 필터, 상품 상세, 실측표, 사용자·사이즈 선택.
+- Review Agent: 긍정·중립·부정 비율, 사이즈 불만, 키워드, 요약.
+- Fit Agent: 구매·반품 이력과 리뷰를 결합한 가중합, 표본 수와 근거 표시.
+- CPU 시간·RSS 메모리·처리시간·서비스 응답시간 실측, Dashboard 차트 및 로그.
+- DB는 최초 실행 시 생성하고, 이후 기존 데이터를 유지합니다. DB와 개인 키는 커밋하지 않습니다.
+
+작업 도중 별도 스키마를 사용하는 `data/fashion_shop.db`가 확인되어 해당 DB는 보존했습니다.
+현재 앱은 **`data/demo/fashion_shop.db` 한 개**를 사용합니다. 기존 DB와의 통합은 스키마 합의·마이그레이션 후 진행하세요.
+
+### 검증
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+테스트는 임시 DB를 사용합니다. 실제 샘플 DB나 개인 키를 필요로 하지 않고 유료 API도 호출하지 않습니다.
+빈 이력, 잘못된 입력, 점수 공식, 실패 로그, Streamlit 기본 동작을 검증합니다.
+
+### 현재 구조
+
+```text
+FitWise/
+├── streamlit_app.py          # 화면 진입점과 공통 설정
+├── views/                   # 상품 목록 / 상세·리뷰 / 적합도 / 관리자
+├── app/
+│   ├── config.py            # .env 로딩
+│   ├── db.py                # SQLite 연결과 샘플 데이터
+│   ├── schema.sql           # 7개 테이블과 인덱스
+│   ├── repository.py        # 공통 데이터 조회
+│   ├── services.py          # 분석 흐름과 측정 연결
+│   ├── ui.py                # 공통 화면 컴포넌트
+│   ├── review_agent/        # 리뷰 baseline
+│   ├── fit_agent/           # 적합도 baseline
+│   └── monitoring/          # 실행·자원 로그
+├── static/css/style.css
+├── data/demo/fashion_shop.db # 자동 생성, Git 제외
+├── tests/                   # unittest + Streamlit AppTest
+├── docs/                    # 팀 작업 순서와 공통 규격
+├── .vscode/                 # F5 / 테스트 / 추천 확장
+├── .streamlit/config.toml   # 로컬 주소·포트·테마
+├── .env                     # 개인 설정, Git 제외
+├── .env.example             # 팀 공유용 빈 설정
+└── requirements.txt
+```
+
+### 해석 범위
+
+이 버전은 로컬 개발용이며 로그인·관리자 권한 검증·실제 구매 기능은 구현하지 않았습니다.
+구매적합도는 실제 성공/반품 확률이 아니고, 주문은 반품 기간이 종료된 것으로 가정합니다.
+측정값은 Streamlit을 실행하는 **로컬 프로세스** 기준이며 브라우저 응답시간이나 원격 AI 서버 자원은 아닙니다.
+상세한 수치 정의와 다음 개발 순서는 `docs` 문서를 참고하세요.
+
+---
+
+## 최초 기획안
+
 > **개인·상품 반품 데이터 기반 AI 구매적합도 Agent 및 자원 모니터링 시스템**
 
 FitWise는 의류 쇼핑몰에서 발생하는 **사이즈 및 핏 불일치로 인한 반품을 예방**하기 위한 웹 서비스입니다.
