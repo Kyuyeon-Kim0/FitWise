@@ -15,6 +15,12 @@ class Operation:
     processing_ms: float = 0
 
     def run_agent(self, agent_type, callback, product_id, user_id=None, size=None, top_level=True):
+        self.connection.execute(
+            """INSERT INTO agent_logs(request_id,agent_type,product_id,user_id,size,status,
+               processing_ms,result_json,error_type) VALUES (?,?,?,?,?,'started',0,NULL,NULL)""",
+            (self.request_id, agent_type, product_id, user_id, size),
+        )
+        self.connection.commit()
         started = time.perf_counter()
         result, error = None, None
         try:
@@ -45,6 +51,14 @@ def measure(connection, operation):
     process.cpu_percent(interval=None)
     started = time.perf_counter()
     status = "success"
+    # 서비스 진입 시점은 분석 버튼을 누른 시점에 해당합니다.
+    connection.execute(
+        """INSERT INTO resource_logs(request_id,operation,phase,cpu_percent,cpu_ms,memory_before_mb,
+           memory_after_mb,memory_delta_mb,processing_ms,response_ms,status)
+           VALUES (?,?,'requested',0,0,?,?,0,0,0,'started')""",
+        (task.request_id, operation, memory_before, memory_before),
+    )
+    connection.commit()
     try:
         yield task
     except Exception:
@@ -56,9 +70,9 @@ def measure(connection, operation):
         cpu_percent = min(max(process.cpu_percent(interval=None) / logical_cpu_count, 0.0), 100.0)
         memory_after = process.memory_info().rss / 1024 ** 2
         connection.execute(
-            """INSERT INTO resource_logs(request_id,operation,cpu_percent,cpu_ms,memory_before_mb,
+            """INSERT INTO resource_logs(request_id,operation,phase,cpu_percent,cpu_ms,memory_before_mb,
                memory_after_mb,memory_delta_mb,processing_ms,response_ms,status)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,'completed',?,?,?,?,?,?,?,?)""",
             # psutil의 프로세스 CPU 사용률을 전체 논리 코어 기준(0~100%)으로 정규화합니다.
             (task.request_id, operation, cpu_percent, 0.0, memory_before,
              memory_after, memory_after - memory_before,
@@ -71,11 +85,13 @@ def dashboard_data(connection):
         """SELECT operation,COUNT(*) AS count,AVG(cpu_percent) AS cpu_percent,
            AVG(memory_after_mb) AS memory_mb,AVG(memory_delta_mb) AS memory_delta_mb,
            AVG(processing_ms) AS processing_ms,AVG(response_ms) AS response_ms
-           FROM resource_logs WHERE status='success' GROUP BY operation""")]
+           FROM resource_logs WHERE phase='completed' AND status='success' GROUP BY operation""")]
     resources = [dict(row) for row in connection.execute("SELECT * FROM resource_logs ORDER BY id DESC LIMIT 50")]
     agents = [dict(row) for row in connection.execute(
         """SELECT a.id,a.request_id,a.agent_type,a.status,a.processing_ms,a.created_at,p.name AS product_name
-           FROM agent_logs a LEFT JOIN products p ON p.id=a.product_id ORDER BY a.id DESC LIMIT 30""")]
+           FROM agent_logs a LEFT JOIN products p ON p.id=a.product_id
+           WHERE a.status IN ('success','error') ORDER BY a.id DESC LIMIT 30""")]
     counts = dict(connection.execute(
-        "SELECT COUNT(*) AS total,COALESCE(SUM(status='error'),0) AS errors FROM agent_logs").fetchone())
+        """SELECT COUNT(*) AS total,COALESCE(SUM(status='error'),0) AS errors
+           FROM agent_logs WHERE status IN ('success','error')""").fetchone())
     return {"summary": summary, "resources": resources, "agents": agents, "counts": counts}

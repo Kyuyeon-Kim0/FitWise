@@ -4,8 +4,8 @@ from app.db import connect
 from app.fit_agent import analyze as analyze_fit
 from app.fit_agent.advisor import advise as advise_fit
 from app.monitoring import measure
-from app.repository import (get_product, get_review_analysis, list_products, list_reviews,
-                            save_review_analysis)
+from app.repository import (SORT_OPTIONS, get_product, get_review_analysis, list_products,
+                            list_reviews, save_review_analysis)
 from app.review_agent import analyze as analyze_reviews
 from app.review_agent import analyze_api as analyze_reviews_api
 from app.review_agent.advisor import advise as advise_reviews
@@ -16,10 +16,10 @@ def ensure_baseline():
         raise ValueError("현재는 baseline 모드만 지원합니다. 실제 API 연결은 후속 개발 항목입니다.")
 
 
-def browse_products(category="전체", database=None):
+def browse_products(category="전체", database=None, *, search="", sort="추천순", limit=None, offset=0):
     with connect(database) as connection:
         with measure(connection, "browse"):
-            return list_products(connection, category)
+            return list_products(connection, category, search, sort, limit, offset)
 
 
 def browse_detail(product_id, database=None):
@@ -74,13 +74,15 @@ def run_review(product_id, database=None, *, mode=None):
         return {"result": result, "request_id": task.request_id, "review_source": source}
 
 
-def run_fit(product_id, user_id, size, preferred_fit, database=None):
+def run_fit(product_id, user_id, size, preferred_fit, height, weight, database=None):
     ensure_baseline()
     with connect(database) as connection:
         product = get_product(connection, product_id)
         valid_preferences = {"슬림핏", "레귤러핏", "루즈핏"}
         if (type(user_id) is not int or not isinstance(size, str) or size not in product["sizes"]
-                or preferred_fit not in valid_preferences):
+                or preferred_fit not in valid_preferences
+                or type(height) is not int or height < 140 or height > 200
+                or type(weight) is not int or weight < 35 or weight > 180):
             raise ValueError("사용자와 상품 사이즈를 확인해 주세요.")
         if connection.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone() is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
@@ -91,9 +93,9 @@ def run_fit(product_id, user_id, size, preferred_fit, database=None):
             def pipeline():
                 review, review_source = get_or_run_review_analysis(connection, product_id, "baseline", task, user_id, size)
                 review_context["source"] = review_source
-                fit_result = analyze_fit(connection, user_id, product, size, review)
+                fit_result = analyze_fit(connection, user_id, product, size, review, height, weight)
                 try:
-                    fit_result["advisor"] = advise_fit(product, size, preferred_fit, fit_result, review)
+                    fit_result["advisor"] = advise_fit(product, size, preferred_fit, height, weight, fit_result, review)
                     fit_result["advisor_error"] = None
                 except Exception as exc:
                     fit_result["advisor"] = None
@@ -102,4 +104,5 @@ def run_fit(product_id, user_id, size, preferred_fit, database=None):
             result = task.run_agent("fit", pipeline, product_id, user_id, size)
         return {"result": result, "request_id": task.request_id,
                 "product_id": product_id, "user_id": user_id, "size": size,
-                "preferred_fit": preferred_fit, "review_source": review_context["source"]}
+                "preferred_fit": preferred_fit, "height": height, "weight": weight,
+                "review_source": review_context["source"]}

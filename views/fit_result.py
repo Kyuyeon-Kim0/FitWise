@@ -15,7 +15,7 @@ with connect() as connection:
     users = {u["id"]: u["name"] for u in list_users(connection)}
 result = saved["result"]
 st.write(f"**{users.get(saved['user_id'], '사용자')}** · {product['name']} · **{saved['size']}** 사이즈")
-st.caption(f"이번 분석의 선택 선호 핏: {saved.get('preferred_fit', '미선택')}")
+st.caption(f"이번 분석의 선택 선호 핏: {saved.get('preferred_fit', '미선택')} · 키 {saved.get('height', '-')}cm · 몸무게 {saved.get('weight', '-')}kg")
 left, right = st.columns([1, 2], gap="large")
 with left, st.container(border=True):
     st.metric("FITWISE SCORE", f"{result['score']} / 100" if result["score"] is not None else "데이터 부족")
@@ -40,7 +40,6 @@ if advisor:
     st.subheader("AI Fit Advisor 권고")
     st.info(advisor["recommendation"])
     st.write(advisor["explanation"])
-    st.caption(f"판단 신뢰도: {advisor['confidence']}")
     if advisor["risk_signals"]:
         st.write("주의 신호: " + " · ".join(advisor["risk_signals"]))
     if advisor["next_actions"]:
@@ -53,7 +52,7 @@ elif result.get("advisor_error"):
 with st.expander("점수 산정 방식"):
     st.write("각 지표를 0~100점으로 환산한 뒤 가중합하여 최종 구매적합도를 계산합니다.")
     st.markdown("""
-**1. 개인 선택 사이즈 성공률 · 30%**
+**1. 개인 선택 사이즈 성공률 · 25%**
 동일 카테고리에서 사용자가 선택한 사이즈로 구매한 주문의 미반품 비율입니다.
 
 `(개인 동일 카테고리·선택 사이즈 주문 수 - 반품 수) / 주문 수 × 100`
@@ -63,22 +62,27 @@ with st.expander("점수 산정 방식"):
 
 `(해당 상품 전체 주문 수 - 전체 반품 수) / 전체 주문 수 × 100`
 
-**3. 선택 사이즈 반품 안정성 · 25%**
-모든 사용자의 해당 상품·선택 사이즈 주문 중 미반품 비율입니다.
+**3. 체형 유사 선택 사이즈 성공률 · 30%**
+해당 상품·선택 사이즈 주문 중, 입력한 키·몸무게와 가까운 구매자의 주문에 더 높은 가중치를 둔 미반품 비율입니다.
 
-`(해당 상품·선택 사이즈 주문 수 - 반품 수) / 주문 수 × 100`
+`Σ(체형 유사도 × 미반품 여부) / Σ(체형 유사도) × 100`
 
-**4. 리뷰 적합도 · 25%**
-해당 상품의 전체 리뷰 중 평점 4~5점인 긍정 리뷰의 비율입니다.
+**4. 체형 유사 리뷰 적합도 · 25%**
+해당 상품 리뷰 중, 입력한 키·몸무게와 가까운 작성자의 긍정 리뷰(평점 4~5점)에 더 높은 가중치를 둔 비율입니다.
 
-`긍정 리뷰 수 / 전체 리뷰 수 × 100`
+`Σ(체형 유사도 × 긍정 리뷰 여부) / Σ(체형 유사도) × 100`
+
+**체형 유사도 기준**
+키 차이와 몸무게 차이가 작을수록 유사도가 높습니다. 각 차이는 최대 20cm·20kg까지만 반영하며, 체형이 크게 달라도 모든 리뷰를 완전히 제외하지 않도록 최소 유사도 0.1을 적용합니다.
+
+`max(0.1, 1 - 0.5×min(키 차이, 20)/20 - 0.5×min(몸무게 차이, 20)/20)`
 
 **최종 점수**
-`개인 선택 사이즈 성공률 × 0.30 + 상품 반품 안정성 × 0.20 + 선택 사이즈 반품 안정성 × 0.25 + 리뷰 적합도 × 0.25`
+`개인 선택 사이즈 성공률 × 0.25 + 상품 반품 안정성 × 0.20 + 체형 유사 선택 사이즈 성공률 × 0.30 + 체형 유사 리뷰 적합도 × 0.25`
 """)
-    st.caption("예: 80점, 90점, 70점, 75점이면 80×0.30 + 90×0.20 + 70×0.25 + 75×0.25 = 78.25점이며, 최종 표시는 78점입니다.")
+    st.caption("예: 80점, 90점, 70점, 75점이면 80×0.25 + 90×0.20 + 70×0.30 + 75×0.25 = 77.75점이며, 최종 표시는 78점입니다.")
     st.write("데이터가 없는 항목은 100점으로 처리하지 않고 제외한 뒤, 남은 가중치를 합계 100%가 되도록 재정규화합니다. 모든 항목에 데이터가 없으면 점수를 산출하지 않습니다.")
-    st.write("각 항목의 표본이 5건 미만이면 참고용 경고를 표시합니다. 리뷰의 사이즈·핏 부정 키워드는 점수를 직접 차감하지 않고 분석 근거와 AI 권고에 반영합니다.")
+    st.write("각 항목의 표본이 5건 미만이면 참고용 경고를 표시합니다. 리뷰의 사이즈·핏 부정 키워드는 점수를 직접 차감하지 않고 분석 근거와 AI Fit Advisor에 반영합니다.")
 review_note = "저장된 리뷰 분석 결과를 재사용했습니다." if saved.get("review_source") == "cached" else "리뷰 분석 결과를 새로 생성해 저장했습니다."
 st.caption(f"실행 ID: {saved['request_id']} · {review_note}")
 a, b = st.columns(2)

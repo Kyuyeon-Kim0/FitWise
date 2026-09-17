@@ -1,6 +1,8 @@
 PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY, name TEXT NOT NULL, preferred_fit TEXT NOT NULL
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, preferred_fit TEXT NOT NULL,
+    height INTEGER NOT NULL CHECK(height BETWEEN 140 AND 200),
+    weight INTEGER NOT NULL CHECK(weight BETWEEN 35 AND 180)
 );
 CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL,
@@ -36,17 +38,18 @@ CREATE TABLE IF NOT EXISTS agent_logs (
     id INTEGER PRIMARY KEY, request_id TEXT NOT NULL,
     agent_type TEXT NOT NULL CHECK(agent_type IN ('review','fit')),
     product_id INTEGER REFERENCES products(id), user_id INTEGER REFERENCES users(id),
-    size TEXT, status TEXT NOT NULL CHECK(status IN ('success','error')),
+    size TEXT, status TEXT NOT NULL CHECK(status IN ('started','success','error')),
     processing_ms REAL NOT NULL, result_json TEXT, error_type TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE TABLE IF NOT EXISTS resource_logs (
-    id INTEGER PRIMARY KEY, request_id TEXT NOT NULL UNIQUE,
+    id INTEGER PRIMARY KEY, request_id TEXT NOT NULL,
     operation TEXT NOT NULL CHECK(operation IN ('browse','review','fit')),
+    phase TEXT NOT NULL CHECK(phase IN ('requested','completed')),
     cpu_percent REAL NOT NULL, cpu_ms REAL NOT NULL,
     memory_before_mb REAL NOT NULL, memory_after_mb REAL NOT NULL,
     memory_delta_mb REAL NOT NULL, processing_ms REAL NOT NULL,
-    response_ms REAL NOT NULL, status TEXT NOT NULL CHECK(status IN ('success','error')),
+    response_ms REAL NOT NULL, status TEXT NOT NULL CHECK(status IN ('started','success','error')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_orders_product_size ON orders(product_id, size);
@@ -55,3 +58,4 @@ CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id);
 CREATE INDEX IF NOT EXISTS idx_review_analysis_product ON review_analysis(product_id);
 CREATE INDEX IF NOT EXISTS idx_agents_request ON agent_logs(request_id);
 CREATE INDEX IF NOT EXISTS idx_resources_operation ON resource_logs(operation);
+CREATE INDEX IF NOT EXISTS idx_resources_request ON resource_logs(request_id);

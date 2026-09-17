@@ -10,6 +10,8 @@ from app.repository import list_products, list_users
 from app.services import browse_detail, run_fit, run_review
 from app.ui import garment, product_thumbnail, review_image_path, show_review
 
+REVIEW_PAGE_SIZE = 5
+
 st.caption("COLLECTION / PRODUCT DETAIL")
 with connect() as connection:
     catalog = list_products(connection)
@@ -40,31 +42,31 @@ with image_column:
     with st.container(height=560, border=False, key="product_image_panel"):
         garment(product)
 with right:
-    with st.container(height=560, border=False, key="product_detail_panel"):
-        st.caption(f"{product['category']} / {product['subcategory']}")
-        st.title(product["name"])
-        st.subheader(f"₩{product['price']:,}")
-        st.write(product["description"])
-        st.caption(f"리뷰 {len(reviews)}건 · 샘플 상품")
-        if not users:
-            st.warning("분석할 사용자가 없습니다.")
-        else:
-            user_names = {u["id"]: u["name"] for u in users}
-            with st.form(f"fit_form_{product_id}"):
-                user_id = st.selectbox("데모 사용자", list(user_names), format_func=user_names.get)
-                size = st.radio("사이즈 선택", product["sizes"], horizontal=True)
-                preferred_fit = st.radio(
-                    "평소 선호하는 핏", ["슬림핏", "레귤러핏", "루즈핏"], horizontal=True
-                )
-                submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
-            if submitted:
-                try:
-                    with st.spinner("구매·반품 기록과 저장된 리뷰 분석 결과를 확인하고 있습니다..."):
-                        st.session_state.fit_result = run_fit(product_id, user_id, size, preferred_fit)
-                    st.switch_page("views/fit_result.py")
-                except ValueError as exc:
-                    st.error(str(exc))
-            st.caption("가중치 기반 적합도 점수 · AI Fit Advisor · 내부 참고 지표")
+    st.caption(f"{product['category']} / {product['subcategory']}")
+    st.title(product["name"])
+    st.subheader(f"₩{product['price']:,}")
+    st.write(product["description"])
+    st.caption(f"리뷰 {len(reviews)}건 · 샘플 상품")
+    if not users:
+        st.warning("분석할 사용자가 없습니다.")
+    else:
+        user_names = {u["id"]: u["name"] for u in users}
+        with st.form(f"fit_form_{product_id}"):
+            user_id = st.selectbox("데모 사용자", list(user_names), format_func=user_names.get)
+            size = st.radio("사이즈 선택", product["sizes"], horizontal=True)
+            preferred_fit = st.radio("평소 선호하는 핏", ["슬림핏", "레귤러핏", "루즈핏"],
+                                     horizontal=True)
+            height = st.select_slider("키 (cm)", options=list(range(145, 196)), value=165)
+            weight = st.select_slider("몸무게 (kg)", options=list(range(40, 121)), value=60)
+            submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
+        if submitted:
+            try:
+                with st.spinner("구매·반품 기록과 저장된 리뷰 분석 결과를 확인하고 있습니다..."):
+                    st.session_state.fit_result = run_fit(product_id, user_id, size, preferred_fit, height, weight)
+                st.switch_page("views/fit_result.py")
+            except ValueError as exc:
+                st.error(str(exc))
+        st.caption("가중치 기반 적합도 점수 · AI Fit Advisor · 내부 참고 지표")
 
 st.subheader("사이즈 가이드")
 st.caption("단면 기준 · cm · 가상 실측 데이터")
@@ -124,3 +126,17 @@ else:
                 st.write(f"{'★' * review['rating']}{'☆' * (5-review['rating'])}")
                 st.write(review["content"])
                 st.caption(f"{review['size']} 사이즈 · {review['created_at']}")
+review_key = f"reviews_revealed_{product_id}"
+if st.session_state.get(f"{review_key}_for") != product_id:
+    st.session_state[review_key] = REVIEW_PAGE_SIZE
+    st.session_state[f"{review_key}_for"] = product_id
+revealed_reviews = st.session_state[review_key]
+for review in reviews[:revealed_reviews]:
+    with st.container(border=True):
+        st.write(f"**{review['user_name']}** ({review['user_height']}cm · {review['user_weight']}kg) · {'★' * review['rating']}{'☆' * (5-review['rating'])}")
+        st.write(review["content"])
+        st.caption(f"{review['size']} 사이즈 · {review['created_at']}")
+if len(reviews) > revealed_reviews:
+    if st.button("리뷰 더 보기 ↓", key="load_more_reviews", width="stretch"):
+        st.session_state[review_key] = revealed_reviews + REVIEW_PAGE_SIZE
+        st.rerun()

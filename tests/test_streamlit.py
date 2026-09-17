@@ -28,10 +28,10 @@ class StreamlitFlowTest(unittest.TestCase):
                 app.button(key="run_review_baseline").click().run()
                 self.assertEqual(len(app.exception), 0)
                 with connect(database) as connection:
-                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 1)
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 2)
                 app.run()
                 with connect(database) as connection:
-                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 1)
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 2)
                 submit = next(button for button in app.button if "구매적합도 분석" in button.label)
                 submit.click().run()
                 self.assertEqual(len(app.exception), 0)
@@ -41,7 +41,7 @@ class StreamlitFlowTest(unittest.TestCase):
                 app.switch_page("views/admin_dashboard.py").run()
                 self.assertEqual(len(app.exception), 0)
                 with connect(database) as connection:
-                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 2)
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 4)
                     before = connection.execute("SELECT COUNT(*) FROM resource_logs").fetchone()[0]
                 app.button(key="refresh_dashboard").click().run()
                 self.assertEqual(len(app.exception), 0)
