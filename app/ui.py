@@ -60,12 +60,14 @@ def garment(product):
 
 
 def show_review(result):
-    st.caption("규칙 기반 리뷰 분석 · 평점 및 키워드 사전")
-    cols = st.columns(4)
-    for col, label, key in zip(cols, ("긍정", "중립", "부정", "사이즈 불만"),
-                               ("positive_pct", "neutral_pct", "negative_pct", "size_complaint_pct")):
-        value = result[key]
-        col.metric(label, f"{value}%" if value is not None else "—")
+    mode_label = f"AI 에이전트 분석 · {result['mode']}" if result["mode"].startswith("api-") else f"규칙 기반 분석 · {result['mode']}"
+    st.caption(mode_label)
+    metrics = (("긍정", "positive_pct"), ("중립", "neutral_pct"), ("부정", "negative_pct"), ("사이즈 불만", "size_complaint_pct"))
+    for row_start in (0, 2):
+        cols = st.columns(2)
+        for col, (label, key) in zip(cols, metrics[row_start:row_start + 2]):
+            value = result[key]
+            col.metric(label, f"{value}%" if value is not None else "—")
     st.write(result["summary"])
     left, right = st.columns(2)
     for col, label, key in ((left, "주요 긍정 키워드", "positive_keywords"),
@@ -84,3 +86,18 @@ def show_review(result):
         for comment in result["fit_comments"]:
             st.write(f"• {comment}")
     st.caption("긍정 4~5점 · 중립 3점 · 부정 1~2점. 키워드 분석은 문맥과 부정 표현을 오해할 수 있습니다.")
+    advisor = result.get("advisor")
+    if advisor:
+        st.markdown("**AI Review Advisor 조언**")
+        st.info(advisor["recommendation"])
+        st.write(advisor["explanation"])
+        st.caption(f"판단 신뢰도: {advisor['confidence']}")
+        if advisor["risk_signals"]:
+            st.write("주의 신호: " + " · ".join(advisor["risk_signals"]))
+        if advisor["next_actions"]:
+            st.write("다음 행동: " + " · ".join(advisor["next_actions"]))
+    elif result.get("advisor_error"):
+        st.warning(
+            "AI Review Advisor를 사용할 수 없어 분석 결과만 표시합니다. "
+            f"오류 유형: {result['advisor_error']}"
+        )

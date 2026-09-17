@@ -29,6 +29,7 @@ def initialize(database=None, seed=True):
             "orders": {"id", "user_id", "product_id", "size", "ordered_at"},
             "returns": {"id", "order_id", "reason", "returned_at"},
             "reviews": {"id", "user_id", "product_id", "size", "rating", "content", "created_at"},
+            "review_analysis": {"id", "product_id", "result_json", "created_at"},
             "agent_logs": {"id", "request_id", "agent_type", "processing_ms", "result_json", "status"},
             "resource_logs": {"id", "request_id", "operation", "memory_after_mb", "response_ms", "status"},
         }

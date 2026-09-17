@@ -2,9 +2,13 @@
 from app.config import get_settings
 from app.db import connect
 from app.fit_agent import analyze as analyze_fit
+from app.fit_agent.advisor import advise as advise_fit
 from app.monitoring import measure
-from app.repository import get_product, list_products, list_reviews
+from app.repository import (get_product, get_review_analysis, list_products, list_reviews,
+                            save_review_analysis)
 from app.review_agent import analyze as analyze_reviews
+from app.review_agent import analyze_api as analyze_reviews_api
+from app.review_agent.advisor import advise as advise_reviews
 
 
 def ensure_baseline():
@@ -24,29 +28,78 @@ def browse_detail(product_id, database=None):
             return get_product(connection, product_id), list_reviews(connection, product_id)
 
 
-def run_review(product_id, database=None):
-    ensure_baseline()
+def get_or_run_review_analysis(connection, product_id, mode, task=None, user_id=None, size=None,
+                               top_level=False):
+    """모드(baseline/api)별로 저장된 결과를 우선 사용하고, 없을 때에만 Review Agent를 실행합니다."""
+    cached = get_review_analysis(connection, product_id, mode)
+    if cached is not None:
+        cached.pop("created_at", None)
+        return cached, "cached"
+
+    reviews = list_reviews(connection, product_id)
+    if mode == "api":
+        settings = get_settings()
+        callback = lambda: analyze_reviews_api(reviews, settings.api_key, settings.model)
+    else:
+        callback = lambda: analyze_reviews(reviews)
+    result = (task.run_agent("review", callback, product_id, user_id, size, top_level=top_level)
+              if task is not None else callback())
+    if top_level:
+        # Fit의 내부 baseline 조회에는 조언을 생성하지 않아 불필요한 API 호출을 피합니다.
+        try:
+            result["advisor"] = advise_reviews(get_product(connection, product_id), result)
+            result["advisor_error"] = None
+        except Exception as exc:
+            result["advisor"] = None
+            result["advisor_error"] = type(exc).__name__
+    save_review_analysis(connection, product_id, mode, result)
+    return result, "generated"
+
+
+def run_review(product_id, database=None, *, mode=None):
+    settings = get_settings()
+    mode = mode or settings.analysis_mode
+    if mode not in ("baseline", "api"):
+        raise ValueError("지원하지 않는 분석 모드입니다.")
+    if mode == "api" and not settings.api_key:
+        raise ValueError("OpenAI API 키가 설정되지 않았습니다. baseline 모드를 사용하세요.")
     with connect(database) as connection:
         get_product(connection, product_id)
+        cached = get_review_analysis(connection, product_id, mode)
+        if cached is not None:
+            cached.pop("created_at", None)
+            return {"result": cached, "request_id": None, "review_source": "cached"}
         with measure(connection, "review") as task:
-            result = task.run_agent("review", lambda: analyze_reviews(list_reviews(connection, product_id)), product_id)
-        return {"result": result, "request_id": task.request_id}
+            result, source = get_or_run_review_analysis(connection, product_id, mode, task, top_level=True)
+        return {"result": result, "request_id": task.request_id, "review_source": source}
 
 
-def run_fit(product_id, user_id, size, database=None):
+def run_fit(product_id, user_id, size, preferred_fit, database=None):
     ensure_baseline()
     with connect(database) as connection:
         product = get_product(connection, product_id)
-        if type(user_id) is not int or not isinstance(size, str) or size not in product["sizes"]:
+        valid_preferences = {"슬림핏", "레귤러핏", "루즈핏"}
+        if (type(user_id) is not int or not isinstance(size, str) or size not in product["sizes"]
+                or preferred_fit not in valid_preferences):
             raise ValueError("사용자와 상품 사이즈를 확인해 주세요.")
         if connection.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone() is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
 
         with measure(connection, "fit") as task:
+            review_context = {}
+
             def pipeline():
-                review = task.run_agent("review", lambda: analyze_reviews(list_reviews(connection, product_id)),
-                                        product_id, user_id, size, top_level=False)
-                return analyze_fit(connection, user_id, product, size, review)
+                review, review_source = get_or_run_review_analysis(connection, product_id, "baseline", task, user_id, size)
+                review_context["source"] = review_source
+                fit_result = analyze_fit(connection, user_id, product, size, review)
+                try:
+                    fit_result["advisor"] = advise_fit(product, size, preferred_fit, fit_result, review)
+                    fit_result["advisor_error"] = None
+                except Exception as exc:
+                    fit_result["advisor"] = None
+                    fit_result["advisor_error"] = type(exc).__name__
+                return fit_result
             result = task.run_agent("fit", pipeline, product_id, user_id, size)
         return {"result": result, "request_id": task.request_id,
-                "product_id": product_id, "user_id": user_id, "size": size}
+                "product_id": product_id, "user_id": user_id, "size": size,
+                "preferred_fit": preferred_fit, "review_source": review_context["source"]}

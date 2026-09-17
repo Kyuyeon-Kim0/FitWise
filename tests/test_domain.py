@@ -7,9 +7,10 @@ from unittest.mock import patch
 
 from app.db import connect, initialize
 from app.fit_agent import analyze as fit_analyze
+from app.llm import LLMError
 from app.monitoring import dashboard_data
 from app.repository import get_product
-from app.review_agent import analyze
+from app.review_agent import analyze, analyze_api
 from app.services import browse_products, run_fit, run_review
 
 
@@ -17,7 +18,7 @@ class FitWiseTest(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.database = Path(self.directory.name) / "test.db"
-        self.environment = patch.dict(os.environ, {"FITWISE_ANALYSIS_MODE": "baseline"})
+        self.environment = patch.dict(os.environ, {"FITWISE_ANALYSIS_MODE": "baseline", "OPENAI_API_KEY": ""})
         self.environment.start()
         initialize(self.database)
 
@@ -88,9 +89,9 @@ class FitWiseTest(unittest.TestCase):
             connection.commit()
             review = analyze([{"rating": 5, "content": "좋아요"}])
             result = fit_analyze(connection, 1, get_product(connection, 1), "M", review)
-        # 50*.2 + 50*.3 + 66.7*.15 + 66.7*.2 + 100*.15 = 63.345
-        self.assertEqual(result["score"], 63)
-        self.assertEqual(result["metrics"][2]["value"], 33.3)
+        # 50*.30 + 66.7*.20 + 66.7*.25 + 100*.25 = 70.015
+        self.assertEqual(result["score"], 70)
+        self.assertEqual(result["metrics"][2]["value"], 66.7)
         self.assertTrue(result["limited_data"])
 
     def test_missing_data_is_not_perfect_success(self):
@@ -99,22 +100,25 @@ class FitWiseTest(unittest.TestCase):
             connection.execute("DELETE FROM orders")
             connection.execute("DELETE FROM reviews")
             connection.commit()
-        result = run_fit(1, 1, "M", self.database)["result"]
+        result = run_fit(1, 1, "M", "레귤러핏", self.database)["result"]
         self.assertIsNone(result["score"])
         self.assertTrue(all(m["value"] is None for m in result["metrics"]))
         with connect(self.database) as connection:
             connection.execute("INSERT INTO reviews(user_id,product_id,size,rating,content,created_at) VALUES (1,1,'M',5,'좋아요','2026-01-01')")
+            connection.execute("DELETE FROM review_analysis WHERE product_id=1")
             connection.commit()
-        result = run_fit(1, 1, "M", self.database)["result"]
+        result = run_fit(1, 1, "M", "레귤러핏", self.database)["result"]
         self.assertEqual(result["score"], 100)
         self.assertEqual(result["metrics"][-1]["effective_weight_pct"], 100)
         self.assertTrue(result["limited_data"])
 
     def test_filters_and_validation(self):
         self.assertEqual(len(browse_products("하의", self.database)), 2)
-        for user_id, size in ((1, "XXXL"), (999, "M"), (True, "M"), (1, ["M"])):
+        for user_id, size, preferred_fit in ((1, "XXXL", "레귤러핏"), (999, "M", "레귤러핏"),
+                                             (True, "M", "레귤러핏"), (1, ["M"], "레귤러핏"),
+                                             (1, "M", "알 수 없음")):
             with self.assertRaises(ValueError):
-                run_fit(1, user_id, size, self.database)
+                run_fit(1, user_id, size, preferred_fit, self.database)
         with self.assertRaises(ValueError):
             run_review(999, self.database)
         with connect(self.database) as connection:
@@ -123,14 +127,14 @@ class FitWiseTest(unittest.TestCase):
     def test_pipeline_measurements_and_correlation(self):
         browse_products(database=self.database)
         run_review(1, self.database)
-        saved = run_fit(1, 1, "M", self.database)
+        saved = run_fit(1, 1, "M", "레귤러핏", self.database)
         with connect(self.database) as connection:
             data = dashboard_data(connection)
             agents = connection.execute("SELECT * FROM agent_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
             resources = connection.execute("SELECT * FROM resource_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
-        self.assertEqual(len(agents), 2)
+            self.assertEqual(len(agents), 1)
         self.assertEqual(len(resources), 1)
-        self.assertEqual(data["counts"]["total"], 3)
+        self.assertEqual(data["counts"]["total"], 2)
         self.assertEqual({row["operation"] for row in data["summary"]}, {"browse", "review", "fit"})
         row = resources[0]
         self.assertGreaterEqual(row["response_ms"], row["processing_ms"])
@@ -141,7 +145,7 @@ class FitWiseTest(unittest.TestCase):
     def test_analysis_failure_is_logged(self):
         with patch("app.services.analyze_reviews", side_effect=RuntimeError("test failure")):
             with self.assertRaises(RuntimeError):
-                run_fit(1, 1, "M", self.database)
+                run_fit(1, 1, "M", "레귤러핏", self.database)
         with connect(self.database) as connection:
             agents = connection.execute("SELECT status,error_type FROM agent_logs").fetchall()
             resource = connection.execute("SELECT status FROM resource_logs").fetchone()
@@ -150,6 +154,38 @@ class FitWiseTest(unittest.TestCase):
         self.assertTrue(all(row["status"] == "error" for row in agents))
         self.assertEqual(resource["status"], "error")
         self.assertEqual(data["summary"], [])
+
+    def test_analyze_api_ignores_unknown_labels_and_indices(self):
+        reviews = [{"rating": 5, "content": "착용감이 좋아요."}, {"rating": 1, "content": "사이즈가 커요."}]
+        fake_response = [
+            {"index": 0, "positive_labels": ["착용감", "존재하지않는라벨"], "negative_labels": []},
+            {"index": 1, "positive_labels": [], "negative_labels": ["사이즈 큼"]},
+            {"index": 99, "positive_labels": ["마감"], "negative_labels": []},
+        ]
+        with patch("app.review_agent.classify_reviews", return_value=fake_response) as mock_classify:
+            result = analyze_api(reviews, "fake-key", "fake-model")
+        mock_classify.assert_called_once()
+        self.assertEqual(result["mode"], "api-fake-model")
+        self.assertEqual(result["positive_keywords"], [{"keyword": "착용감", "count": 1}])
+        self.assertEqual(result["negative_keywords"], [{"keyword": "사이즈 큼", "count": 1}])
+        self.assertEqual(result["size_complaint_pct"], 50)
+
+    def test_run_review_api_requires_key(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
+            with self.assertRaises(ValueError):
+                run_review(1, self.database, mode="api")
+        with connect(self.database) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 0)
+
+    def test_run_review_api_failure_is_logged(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "fake-key", "OPENAI_MODEL": "fake-model"}):
+            with patch("app.services.analyze_reviews_api", side_effect=LLMError("timeout")):
+                with self.assertRaises(LLMError):
+                    run_review(1, self.database, mode="api")
+        with connect(self.database) as connection:
+            agents = connection.execute("SELECT status FROM agent_logs").fetchall()
+        self.assertEqual(len(agents), 1)
+        self.assertEqual(agents[0]["status"], "error")
 
 
 if __name__ == "__main__":

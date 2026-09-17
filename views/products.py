@@ -3,9 +3,20 @@ import streamlit as st
 from app.services import browse_products
 from app.ui import garment
 
-st.html('''<section class="hero"><p class="eyebrow">A BETTER FIT STARTS WITH DATA</p>
-<h1>취향에 맞게.<br>사이즈는 더 정확하게.</h1>
-<p>리뷰와 나의 구매 기록으로 찾는 더 나은 선택.<br>FitWise와 함께 나에게 맞는 옷을 알아보세요.</p></section>''')
+st.html('''<section class="fw-hero">
+<img class="product p1" src="app/static/images/hero/hero_1.png" alt="FitWise 룩 디테일 1">
+<img class="product p2" src="app/static/images/hero/hero_2.png" alt="FitWise 룩 디테일 2">
+<img class="product p3" src="app/static/images/hero/hero_3.png" alt="FitWise 룩 디테일 3">
+<img class="product p4" src="app/static/images/hero/hero_4.png" alt="FitWise 룩 디테일 4">
+<img class="product p5" src="app/static/images/hero/hero_5.png" alt="FitWise 룩 디테일 5">
+<img class="product p6" src="app/static/images/hero/hero_6.png" alt="FitWise 룩 디테일 6">
+<div class="title">
+<h1>NEW<br>COLLECTION</h1>
+<p>리뷰와 구매 기록으로 찾는, 나에게 맞는 선택</p>
+<a href="#product-grid" class="shop-btn">SHOP NOW</a>
+</div>
+</section>''')
+st.html('<div id="product-grid"></div>')
 st.subheader("당신의 다음 데일리웨어")
 category = st.radio("카테고리", ["전체", "상의", "아우터", "하의"], horizontal=True, key="category")
 products = browse_products(category)
