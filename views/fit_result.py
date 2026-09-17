@@ -40,7 +40,6 @@ if advisor:
     st.subheader("AI Fit Advisor 권고")
     st.info(advisor["recommendation"])
     st.write(advisor["explanation"])
-    st.caption(f"판단 신뢰도: {advisor['confidence']}")
     if advisor["risk_signals"]:
         st.write("주의 신호: " + " · ".join(advisor["risk_signals"]))
     if advisor["next_actions"]:

@@ -133,11 +133,13 @@ class FitWiseTest(unittest.TestCase):
             data = dashboard_data(connection)
             agents = connection.execute("SELECT * FROM agent_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
             resources = connection.execute("SELECT * FROM resource_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
-            self.assertEqual(len(agents), 1)
-        self.assertEqual(len(resources), 1)
+            self.assertEqual(len(agents), 2)
+        self.assertEqual(len(resources), 2)
         self.assertEqual(data["counts"]["total"], 2)
         self.assertEqual({row["operation"] for row in data["summary"]}, {"browse", "review", "fit"})
-        row = resources[0]
+        self.assertEqual({row["status"] for row in agents}, {"started", "success"})
+        self.assertEqual({row["phase"] for row in resources}, {"requested", "completed"})
+        row = next(row for row in resources if row["phase"] == "completed")
         self.assertGreaterEqual(row["response_ms"], row["processing_ms"])
         self.assertGreater(row["memory_after_mb"], 0)
         self.assertGreaterEqual(row["cpu_percent"], 0)
@@ -149,11 +151,13 @@ class FitWiseTest(unittest.TestCase):
                 run_fit(1, 1, "M", "레귤러핏", 165, self.database)
         with connect(self.database) as connection:
             agents = connection.execute("SELECT status,error_type FROM agent_logs").fetchall()
-            resource = connection.execute("SELECT status FROM resource_logs").fetchone()
+            resources = connection.execute("SELECT phase,status FROM resource_logs").fetchall()
             data = dashboard_data(connection)
-        self.assertEqual(len(agents), 2)
-        self.assertTrue(all(row["status"] == "error" for row in agents))
-        self.assertEqual(resource["status"], "error")
+        self.assertEqual(len(agents), 4)
+        self.assertEqual([row["status"] for row in agents].count("started"), 2)
+        self.assertEqual([row["status"] for row in agents].count("error"), 2)
+        self.assertEqual([(row["phase"], row["status"]) for row in resources],
+                         [("requested", "started"), ("completed", "error")])
         self.assertEqual(data["summary"], [])
 
     def test_analyze_api_ignores_unknown_labels_and_indices(self):
@@ -185,8 +189,7 @@ class FitWiseTest(unittest.TestCase):
                     run_review(1, self.database, mode="api")
         with connect(self.database) as connection:
             agents = connection.execute("SELECT status FROM agent_logs").fetchall()
-        self.assertEqual(len(agents), 1)
-        self.assertEqual(agents[0]["status"], "error")
+        self.assertEqual([row["status"] for row in agents], ["started", "error"])
 
 
 if __name__ == "__main__":

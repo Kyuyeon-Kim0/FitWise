@@ -75,7 +75,8 @@ resources = pd.DataFrame(data["resources"])
 agents = pd.DataFrame(data["agents"])
 
 if not resources.empty:
-    resources["created_at"] = pd.to_datetime(resources["created_at"], utc=True, errors="coerce")
+    resources["created_at"] = (pd.to_datetime(resources["created_at"], utc=True, errors="coerce")
+                               .dt.tz_convert("Asia/Seoul"))
     for column in ("cpu_percent", "memory_before_mb", "memory_after_mb", "memory_delta_mb",
                    "processing_ms", "response_ms"):
         resources[column] = pd.to_numeric(resources[column], errors="coerce")
@@ -85,9 +86,14 @@ if not resources.empty:
     resources["agent_type"] = resources["operation"].map(AGENT_LABELS)
     resources["operation_label"] = resources["operation"].map(OPERATION_LABELS)
 
+if not agents.empty:
+    agents["created_at"] = (pd.to_datetime(agents["created_at"], utc=True, errors="coerce")
+                            .dt.tz_convert("Asia/Seoul")
+                            .dt.strftime("%Y-%m-%d %H:%M:%S KST"))
+
 last_log = resources["created_at"].max() if not resources.empty else None
 last_log_text = (
-    last_log.strftime("%Y.%m.%d %H:%M UTC")
+    last_log.strftime("%Y.%m.%d %H:%M KST")
     if last_log is not None and not pd.isna(last_log)
     else "기록 없음"
 )
@@ -135,7 +141,7 @@ if not filtered.empty:
     if operation != "전체 작업":
         filtered = filtered[filtered["operation_label"] == operation]
 
-successful = filtered[filtered["status"] == "success"] if not filtered.empty else filtered
+successful = filtered[(filtered["phase"] == "completed") & (filtered["status"] == "success")] if not filtered.empty else filtered
 agent_runs = successful[successful["operation"] != "browse"] if not successful.empty else successful
 baseline = successful[successful["operation"] == "browse"] if not successful.empty else successful
 
@@ -249,14 +255,15 @@ with st.container(key="dashboard_logs"):
         st.info("조건에 맞는 실행 로그가 없습니다.")
     else:
         logs = filtered.sort_values("created_at", ascending=False).head(30).copy()
-        logs["실행 시각"] = logs["created_at"].dt.strftime("%m.%d %H:%M")
+        logs["실행 시각"] = logs["created_at"].dt.strftime("%m.%d %H:%M KST")
         logs["CPU"] = logs["cpu_percent"].map(lambda value: number(value, 1, "%"))
         logs["Memory"] = logs["memory_after_mb"].map(lambda value: number(value, 1, " MB"))
         logs["응답시간"] = logs["response_ms"].map(lambda value: number(value / 1000, 3, "초"))
         st.dataframe(
-            logs[["실행 시각", "mode", "agent_type", "operation_label", "CPU", "Memory", "응답시간", "status"]]
+            logs[["실행 시각", "mode", "agent_type", "operation_label", "phase", "CPU", "Memory", "응답시간", "status"]]
             .rename(columns={
-                "mode": "모드", "agent_type": "Agent 유형", "operation_label": "작업", "status": "상태",
+                "mode": "모드", "agent_type": "Agent 유형", "operation_label": "작업",
+                "phase": "기록 시점", "status": "상태",
             }),
             hide_index=True, width="stretch", height=360,
         )
@@ -273,6 +280,7 @@ with st.expander("측정 기준과 한계"):
     - **Memory**: `psutil`로 측정한 작업 전·후 프로세스 RSS이며 Agent 전용 메모리나 최대 사용량은 아닙니다.
     - **처리시간**: 분석 함수 실행 구간이며, 서비스 응답시간은 Agent 로그 저장까지 포함합니다.
     - **Fit 작업**은 내부 Review 실행을 포함하므로 Agent 로그 수와 리소스 작업 수가 다를 수 있습니다.
+    - 버튼 클릭 시 `requested`, 작업 종료 시 `completed` 자원 로그를 남깁니다. Dashboard 지표는 완료된 성공 작업만 집계합니다.
     - 같은 프로세스의 다른 세션과 백그라운드 작업이 측정값에 영향을 줄 수 있습니다.
     - 외부 API 연결 이후에도 이 값은 로컬 프로세스 기준이며 원격 AI 서버의 CPU·GPU 사용량은 아닙니다.
     """)

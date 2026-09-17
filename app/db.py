@@ -23,6 +23,65 @@ def connect(database=None):
 
 def initialize(database=None, seed=True):
     with connect(database) as connection:
+        # 이전 DB의 리뷰 캐시는 상품당 하나였으므로 baseline 결과로 보존해 이전합니다.
+        review_columns = {row["name"] for row in connection.execute("PRAGMA table_info(review_analysis)")}
+        if review_columns and "mode" not in review_columns:
+            connection.execute("DROP INDEX IF EXISTS idx_review_analysis_product")
+            connection.execute("ALTER TABLE review_analysis RENAME TO review_analysis_legacy")
+            connection.executescript(Path(__file__).with_name("schema.sql").read_text(encoding="utf-8"))
+            connection.execute("""INSERT INTO review_analysis(id,product_id,mode,result_json,created_at)
+                                  SELECT id,product_id,'baseline',result_json,created_at
+                                  FROM review_analysis_legacy""")
+            connection.execute("DROP TABLE review_analysis_legacy")
+            connection.commit()
+
+        # 버튼 클릭(requested)과 작업 완료(completed)를 모두 기록하도록 기존 로그를 확장합니다.
+        agent_row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='agent_logs'"
+        ).fetchone()
+        if agent_row and "'started'" not in agent_row["sql"]:
+            connection.execute("DROP INDEX IF EXISTS idx_agents_request")
+            connection.execute("ALTER TABLE agent_logs RENAME TO agent_logs_legacy")
+            connection.execute("""CREATE TABLE agent_logs (
+                id INTEGER PRIMARY KEY, request_id TEXT NOT NULL,
+                agent_type TEXT NOT NULL CHECK(agent_type IN ('review','fit')),
+                product_id INTEGER REFERENCES products(id), user_id INTEGER REFERENCES users(id), size TEXT,
+                status TEXT NOT NULL CHECK(status IN ('started','success','error')),
+                processing_ms REAL NOT NULL, result_json TEXT, error_type TEXT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            )""")
+            connection.execute("""INSERT INTO agent_logs
+                (id,request_id,agent_type,product_id,user_id,size,status,processing_ms,result_json,error_type,created_at)
+                SELECT id,request_id,agent_type,product_id,user_id,size,status,processing_ms,result_json,error_type,created_at
+                FROM agent_logs_legacy""")
+            connection.execute("DROP TABLE agent_logs_legacy")
+            connection.execute("CREATE INDEX idx_agents_request ON agent_logs(request_id)")
+            connection.commit()
+
+        resource_columns = {row["name"] for row in connection.execute("PRAGMA table_info(resource_logs)")}
+        if resource_columns and "phase" not in resource_columns:
+            connection.execute("DROP INDEX IF EXISTS idx_resources_operation")
+            connection.execute("ALTER TABLE resource_logs RENAME TO resource_logs_legacy")
+            connection.execute("""CREATE TABLE resource_logs (
+                id INTEGER PRIMARY KEY, request_id TEXT NOT NULL,
+                operation TEXT NOT NULL CHECK(operation IN ('browse','review','fit')),
+                phase TEXT NOT NULL CHECK(phase IN ('requested','completed')),
+                cpu_percent REAL NOT NULL, cpu_ms REAL NOT NULL,
+                memory_before_mb REAL NOT NULL, memory_after_mb REAL NOT NULL,
+                memory_delta_mb REAL NOT NULL, processing_ms REAL NOT NULL, response_ms REAL NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('started','success','error')),
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            )""")
+            connection.execute("""INSERT INTO resource_logs
+                (id,request_id,operation,phase,cpu_percent,cpu_ms,memory_before_mb,memory_after_mb,
+                 memory_delta_mb,processing_ms,response_ms,status,created_at)
+                SELECT id,request_id,operation,'completed',cpu_percent,cpu_ms,memory_before_mb,memory_after_mb,
+                 memory_delta_mb,processing_ms,response_ms,status,created_at FROM resource_logs_legacy""")
+            connection.execute("DROP TABLE resource_logs_legacy")
+            connection.execute("CREATE INDEX idx_resources_operation ON resource_logs(operation)")
+            connection.execute("CREATE INDEX idx_resources_request ON resource_logs(request_id)")
+            connection.commit()
+
         # 다른 개발 작업의 기존 DB를 자동 변경하지 않습니다.
         expected = {
             "users": {"id", "name", "preferred_fit", "height"},
@@ -30,9 +89,9 @@ def initialize(database=None, seed=True):
             "orders": {"id", "user_id", "product_id", "size", "ordered_at"},
             "returns": {"id", "order_id", "reason", "returned_at"},
             "reviews": {"id", "user_id", "product_id", "size", "rating", "content", "created_at"},
-            "review_analysis": {"id", "product_id", "result_json", "created_at"},
+            "review_analysis": {"id", "product_id", "mode", "result_json", "created_at"},
             "agent_logs": {"id", "request_id", "agent_type", "processing_ms", "result_json", "status"},
-            "resource_logs": {"id", "request_id", "operation", "memory_after_mb", "response_ms", "status"},
+            "resource_logs": {"id", "request_id", "operation", "phase", "memory_after_mb", "response_ms", "status"},
         }
         for table, required in expected.items():
             columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
