@@ -4,8 +4,8 @@ from app.db import connect
 from app.fit_agent import analyze as analyze_fit
 from app.fit_agent.advisor import advise as advise_fit
 from app.monitoring import measure
-from app.repository import (get_product, get_review_analysis, list_products, list_reviews,
-                            save_review_analysis)
+from app.repository import (SORT_OPTIONS, get_product, get_review_analysis, list_products,
+                            list_reviews, save_review_analysis)
 from app.review_agent import analyze as analyze_reviews
 from app.review_agent import analyze_api as analyze_reviews_api
 from app.review_agent.advisor import advise as advise_reviews
@@ -16,10 +16,10 @@ def ensure_baseline():
         raise ValueError("현재는 baseline 모드만 지원합니다. 실제 API 연결은 후속 개발 항목입니다.")
 
 
-def browse_products(category="전체", database=None):
+def browse_products(category="전체", database=None, *, search="", sort="추천순", limit=None, offset=0):
     with connect(database) as connection:
         with measure(connection, "browse"):
-            return list_products(connection, category)
+            return list_products(connection, category, search, sort, limit, offset)
 
 
 def browse_detail(product_id, database=None):

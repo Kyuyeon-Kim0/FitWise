@@ -29,7 +29,7 @@ class FitWiseTest(unittest.TestCase):
     def test_seed_idempotent_and_foreign_keys(self):
         initialize(self.database)
         with connect(self.database) as connection:
-            for table, expected in (("users", 3), ("products", 6), ("orders", 144), ("reviews", 48)):
+            for table, expected in (("users", 3), ("products", 36), ("orders", 864), ("reviews", 288)):
                 self.assertEqual(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], expected)
             with self.assertRaises(sqlite3.IntegrityError):
                 connection.execute("INSERT INTO returns(order_id,reason,returned_at) VALUES (99999,'test','2026-09-01')")
@@ -113,7 +113,7 @@ class FitWiseTest(unittest.TestCase):
         self.assertTrue(result["limited_data"])
 
     def test_filters_and_validation(self):
-        self.assertEqual(len(browse_products("하의", self.database)), 2)
+        self.assertEqual(len(browse_products("하의", self.database)), 12)
         for user_id, size, preferred_fit in ((1, "XXXL", "레귤러핏"), (999, "M", "레귤러핏"),
                                              (True, "M", "레귤러핏"), (1, ["M"], "레귤러핏"),
                                              (1, "M", "알 수 없음")):
