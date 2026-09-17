@@ -1,7 +1,9 @@
 import pandas as pd
 import streamlit as st
 
+from app.config import get_settings
 from app.db import connect
+from app.llm import LLMError
 from app.repository import list_products, list_users
 from app.services import browse_detail, run_fit, run_review
 from app.ui import garment, show_review
@@ -50,19 +52,30 @@ st.subheader("사이즈 가이드")
 st.caption("단면 기준 · cm · 가상 실측 데이터")
 st.dataframe(pd.DataFrame(product["measurements"]).T.rename_axis("사이즈"), width="stretch")
 st.divider()
-st.subheader("리뷰 분석")
-if st.button("Review Agent 실행", key="run_review", type="primary"):
-    try:
-        with st.spinner("리뷰를 분석하고 있습니다..."):
-            st.session_state[f"review_{product_id}"] = run_review(product_id)
-    except ValueError as exc:
-        st.error(str(exc))
-saved_review = st.session_state.get(f"review_{product_id}")
-if saved_review:
-    with st.container(border=True):
-        show_review(saved_review["result"])
-        caption = "저장된 분석 결과를 재사용했습니다." if saved_review["review_source"] == "cached" else f"실행 ID: {saved_review['request_id']} · 분석 결과를 저장했습니다."
-        st.caption(caption)
+st.subheader("리뷰 분석 · AI 에이전트 사용 비교")
+settings = get_settings()
+baseline_col, api_col = st.columns(2)
+for col, mode, label, enabled, hint in (
+    (baseline_col, "baseline", "규칙 기반 분석 (baseline)", True, ""),
+    (api_col, "api", f"AI 에이전트 분석 ({settings.model or 'OpenAI'})", bool(settings.api_key),
+     "실행하려면 .env에 OPENAI_API_KEY를 설정하세요."),
+):
+    with col:
+        if st.button(f"{label} 실행", key=f"run_review_{mode}", type="primary", disabled=not enabled, width="stretch"):
+            try:
+                with st.spinner("리뷰를 분석하고 있습니다..."):
+                    st.session_state[f"review_{product_id}_{mode}"] = run_review(product_id, mode=mode)
+            except (ValueError, LLMError) as exc:
+                st.error(str(exc))
+        if not enabled:
+            st.caption(hint)
+        saved_review = st.session_state.get(f"review_{product_id}_{mode}")
+        if saved_review:
+            with st.container(border=True):
+                show_review(saved_review["result"])
+                caption = ("저장된 분석 결과를 재사용했습니다." if saved_review["review_source"] == "cached"
+                           else f"실행 ID: {saved_review['request_id']} · 분석 결과를 저장했습니다.")
+                st.caption(caption)
 
 st.subheader(f"고객 리뷰 ({len(reviews)})")
 if not reviews:

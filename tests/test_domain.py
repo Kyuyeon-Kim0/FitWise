@@ -7,9 +7,10 @@ from unittest.mock import patch
 
 from app.db import connect, initialize
 from app.fit_agent import analyze as fit_analyze
+from app.llm import LLMError
 from app.monitoring import dashboard_data
 from app.repository import get_product
-from app.review_agent import analyze
+from app.review_agent import analyze, analyze_api
 from app.services import browse_products, run_fit, run_review
 
 
@@ -151,6 +152,38 @@ class FitWiseTest(unittest.TestCase):
         self.assertTrue(all(row["status"] == "error" for row in agents))
         self.assertEqual(resource["status"], "error")
         self.assertEqual(data["summary"], [])
+
+    def test_analyze_api_ignores_unknown_labels_and_indices(self):
+        reviews = [{"rating": 5, "content": "착용감이 좋아요."}, {"rating": 1, "content": "사이즈가 커요."}]
+        fake_response = [
+            {"index": 0, "positive_labels": ["착용감", "존재하지않는라벨"], "negative_labels": []},
+            {"index": 1, "positive_labels": [], "negative_labels": ["사이즈 큼"]},
+            {"index": 99, "positive_labels": ["마감"], "negative_labels": []},
+        ]
+        with patch("app.review_agent.classify_reviews", return_value=fake_response) as mock_classify:
+            result = analyze_api(reviews, "fake-key", "fake-model")
+        mock_classify.assert_called_once()
+        self.assertEqual(result["mode"], "api-fake-model")
+        self.assertEqual(result["positive_keywords"], [{"keyword": "착용감", "count": 1}])
+        self.assertEqual(result["negative_keywords"], [{"keyword": "사이즈 큼", "count": 1}])
+        self.assertEqual(result["size_complaint_pct"], 50)
+
+    def test_run_review_api_requires_key(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
+            with self.assertRaises(ValueError):
+                run_review(1, self.database, mode="api")
+        with connect(self.database) as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 0)
+
+    def test_run_review_api_failure_is_logged(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "fake-key", "OPENAI_MODEL": "fake-model"}):
+            with patch("app.services.analyze_reviews_api", side_effect=LLMError("timeout")):
+                with self.assertRaises(LLMError):
+                    run_review(1, self.database, mode="api")
+        with connect(self.database) as connection:
+            agents = connection.execute("SELECT status FROM agent_logs").fetchall()
+        self.assertEqual(len(agents), 1)
+        self.assertEqual(agents[0]["status"], "error")
 
 
 if __name__ == "__main__":

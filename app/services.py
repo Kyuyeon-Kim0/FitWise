@@ -6,6 +6,7 @@ from app.monitoring import measure
 from app.repository import (get_product, get_review_analysis, list_products, list_reviews,
                             save_review_analysis)
 from app.review_agent import analyze as analyze_reviews
+from app.review_agent import analyze_api as analyze_reviews_api
 
 
 def ensure_baseline():
@@ -25,31 +26,41 @@ def browse_detail(product_id, database=None):
             return get_product(connection, product_id), list_reviews(connection, product_id)
 
 
-def get_or_run_review_analysis(connection, product_id, task=None, user_id=None, size=None,
+def get_or_run_review_analysis(connection, product_id, mode, task=None, user_id=None, size=None,
                                top_level=False):
-    """저장된 결과를 우선 사용하고, 없을 때에만 Review Agent를 실행합니다."""
-    cached = get_review_analysis(connection, product_id)
+    """모드(baseline/api)별로 저장된 결과를 우선 사용하고, 없을 때에만 Review Agent를 실행합니다."""
+    cached = get_review_analysis(connection, product_id, mode)
     if cached is not None:
         cached.pop("created_at", None)
         return cached, "cached"
 
-    callback = lambda: analyze_reviews(list_reviews(connection, product_id))
+    reviews = list_reviews(connection, product_id)
+    if mode == "api":
+        settings = get_settings()
+        callback = lambda: analyze_reviews_api(reviews, settings.api_key, settings.model)
+    else:
+        callback = lambda: analyze_reviews(reviews)
     result = (task.run_agent("review", callback, product_id, user_id, size, top_level=top_level)
               if task is not None else callback())
-    save_review_analysis(connection, product_id, result)
+    save_review_analysis(connection, product_id, mode, result)
     return result, "generated"
 
 
-def run_review(product_id, database=None):
-    ensure_baseline()
+def run_review(product_id, database=None, *, mode=None):
+    settings = get_settings()
+    mode = mode or settings.analysis_mode
+    if mode not in ("baseline", "api"):
+        raise ValueError("지원하지 않는 분석 모드입니다.")
+    if mode == "api" and not settings.api_key:
+        raise ValueError("OpenAI API 키가 설정되지 않았습니다. baseline 모드를 사용하세요.")
     with connect(database) as connection:
         get_product(connection, product_id)
-        cached = get_review_analysis(connection, product_id)
+        cached = get_review_analysis(connection, product_id, mode)
         if cached is not None:
             cached.pop("created_at", None)
             return {"result": cached, "request_id": None, "review_source": "cached"}
         with measure(connection, "review") as task:
-            result, source = get_or_run_review_analysis(connection, product_id, task, top_level=True)
+            result, source = get_or_run_review_analysis(connection, product_id, mode, task, top_level=True)
         return {"result": result, "request_id": task.request_id, "review_source": source}
 
 
@@ -66,7 +77,7 @@ def run_fit(product_id, user_id, size, database=None):
             review_context = {}
 
             def pipeline():
-                review, review_source = get_or_run_review_analysis(connection, product_id, task, user_id, size)
+                review, review_source = get_or_run_review_analysis(connection, product_id, "baseline", task, user_id, size)
                 review_context["source"] = review_source
                 return analyze_fit(connection, user_id, product, size, review)
             result = task.run_agent("fit", pipeline, product_id, user_id, size)
