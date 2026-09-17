@@ -140,6 +140,7 @@ class FitWiseTest(unittest.TestCase):
         self.assertGreaterEqual(row["response_ms"], row["processing_ms"])
         self.assertGreater(row["memory_after_mb"], 0)
         self.assertGreaterEqual(row["cpu_percent"], 0)
+        self.assertLessEqual(row["cpu_percent"], 100)
         self.assertAlmostEqual(row["memory_delta_mb"], row["memory_after_mb"] - row["memory_before_mb"])
 
     def test_analysis_failure_is_logged(self):
