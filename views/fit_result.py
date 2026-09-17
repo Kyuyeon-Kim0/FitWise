@@ -15,7 +15,7 @@ with connect() as connection:
     users = {u["id"]: u["name"] for u in list_users(connection)}
 result = saved["result"]
 st.write(f"**{users.get(saved['user_id'], '사용자')}** · {product['name']} · **{saved['size']}** 사이즈")
-st.caption(f"이번 분석의 선택 선호 핏: {saved.get('preferred_fit', '미선택')}")
+st.caption(f"이번 분석의 선택 선호 핏: {saved.get('preferred_fit', '미선택')} · 키 {saved.get('height', '-')}cm")
 left, right = st.columns([1, 2], gap="large")
 with left, st.container(border=True):
     st.metric("FITWISE SCORE", f"{result['score']} / 100" if result["score"] is not None else "데이터 부족")

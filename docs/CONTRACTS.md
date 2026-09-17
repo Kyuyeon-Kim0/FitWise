@@ -14,7 +14,7 @@ SQLite 연결은 `with connect(...)`로 열고 닫습니다. 연결 객체를 �
 | `browse_products(category, database)` | 전체/상의/아우터/하의 | 상품 dict 목록 |
 | `browse_detail(product_id, database)` | 상품 ID | (상품 dict, 리뷰 dict 목록) |
 | `run_review(product_id, database)` | 상품 ID | `{result, request_id}` |
-| `run_fit(product_id, user_id, size, preferred_fit, database)` | 상품/사용자 ID, 유효한 사이즈·선호 핏 | `{result, request_id, product_id, user_id, size, preferred_fit}` |
+| `run_fit(product_id, user_id, size, preferred_fit, height, database)` | 상품/사용자 ID, 유효한 사이즈·선호 핏·키(140~200cm, 1cm 단위) | `{result, request_id, product_id, user_id, size, preferred_fit, height}` |
 
 잘못된 카테고리/상품/사용자/사이즈는 ValueError입니다. 검증 실패는 Agent 실행으로 세지 않습니다.
 실제 분석 중 발생한 예외는 재발생시키고 `error` 로그를 남깁니다.
