@@ -263,3 +263,25 @@ if len(reviews) > revealed_reviews:
     if st.button("리뷰 더 보기 ↓", key="load_more_reviews", width="stretch"):
         st.session_state[review_key] = revealed_reviews + REVIEW_PAGE_SIZE
         st.rerun()
+
+same_category_ids = [p["id"] for p in catalog if p["category"] == product["category"] and p["id"] != product_id]
+if same_category_ids:
+    st.divider()
+    st.subheader(f"{product['category']}의 다른 상품도 살펴보세요")
+    similar_key = f"similar_products_{product_id}"
+    saved_similar_ids = st.session_state.get(similar_key, [])
+    if (len(saved_similar_ids) != min(4, len(same_category_ids))
+            or not set(saved_similar_ids).issubset(same_category_ids)):
+        saved_similar_ids = random.sample(same_category_ids, min(4, len(same_category_ids)))
+        st.session_state[similar_key] = saved_similar_ids
+    by_id = {p["id"]: p for p in catalog}
+    similar_products = [by_id[i] for i in saved_similar_ids if i in by_id]
+    similar_cols = st.columns(len(similar_products))
+    for col, item in zip(similar_cols, similar_products):
+        with col, st.container(border=True):
+            garment(item)
+            st.write(f"**{item['name']}**")
+            st.write(f"₩{item['price']:,}")
+            if st.button("보러 가기 →", key=f"similar_{product_id}_{item['id']}", width="stretch"):
+                st.session_state.selected_product = item["id"]
+                st.rerun()
