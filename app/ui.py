@@ -15,10 +15,13 @@ def garment(product):
     background, color = COLORS.get(product["color"], COLORS["sage"])
     rating = product.get("rating")
     badge = f'<span class="garment-badge">★ {rating:.1f}</span>' if rating else ""
-    local_path = ROOT / "static" / "images" / f"product_{product['id']}.png"
-    if local_path.exists():
-        image_url = f"app/static/images/product_{product['id']}.png"
-    else:
+    image_url = None
+    for ext in ("jpg", "png"):
+        local_path = ROOT / "static" / "images" / f"product_{product['id']}.{ext}"
+        if local_path.exists():
+            image_url = f"app/static/images/product_{product['id']}.{ext}"
+            break
+    if image_url is None:
         # 실사 이미지가 아직 없는 상품은 카테고리 키워드 기반 플레이스홀더로 채웁니다.
         keyword = CATEGORY_KEYWORDS.get(product["category"], "fashion")
         image_url = f"https://loremflickr.com/400/500/{keyword}?lock={product['id']}"
