@@ -39,7 +39,7 @@ with right:
             submitted = st.form_submit_button("구매적합도 분석하기 ✦", type="primary", width="stretch")
         if submitted:
             try:
-                with st.spinner("리뷰와 구매·반품 기록을 분석하고 있습니다..."):
+                with st.spinner("구매·반품 기록과 저장된 리뷰 분석 결과를 확인하고 있습니다..."):
                     st.session_state.fit_result = run_fit(product_id, user_id, size)
                 st.switch_page("views/fit_result.py")
             except ValueError as exc:
@@ -61,7 +61,8 @@ saved_review = st.session_state.get(f"review_{product_id}")
 if saved_review:
     with st.container(border=True):
         show_review(saved_review["result"])
-        st.caption(f"실행 ID: {saved_review['request_id']}")
+        caption = "저장된 분석 결과를 재사용했습니다." if saved_review["review_source"] == "cached" else f"실행 ID: {saved_review['request_id']} · 분석 결과를 저장했습니다."
+        st.caption(caption)
 
 st.subheader(f"고객 리뷰 ({len(reviews)})")
 if not reviews:

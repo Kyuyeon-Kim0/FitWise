@@ -73,9 +73,9 @@ class FitWiseTest(unittest.TestCase):
             connection.commit()
             review = analyze([{"rating": 5, "content": "좋아요"}])
             result = fit_analyze(connection, 1, get_product(connection, 1), "M", review)
-        # 50*.2 + 50*.3 + 66.7*.15 + 66.7*.2 + 100*.15 = 63.345
-        self.assertEqual(result["score"], 63)
-        self.assertEqual(result["metrics"][2]["value"], 33.3)
+        # 50*.30 + 66.7*.20 + 66.7*.25 + 100*.25 = 70.015
+        self.assertEqual(result["score"], 70)
+        self.assertEqual(result["metrics"][2]["value"], 66.7)
         self.assertTrue(result["limited_data"])
 
     def test_missing_data_is_not_perfect_success(self):
@@ -89,6 +89,7 @@ class FitWiseTest(unittest.TestCase):
         self.assertTrue(all(m["value"] is None for m in result["metrics"]))
         with connect(self.database) as connection:
             connection.execute("INSERT INTO reviews(user_id,product_id,size,rating,content,created_at) VALUES (1,1,'M',5,'좋아요','2026-01-01')")
+            connection.execute("DELETE FROM review_analysis WHERE product_id=1")
             connection.commit()
         result = run_fit(1, 1, "M", self.database)["result"]
         self.assertEqual(result["score"], 100)
@@ -113,9 +114,9 @@ class FitWiseTest(unittest.TestCase):
             data = dashboard_data(connection)
             agents = connection.execute("SELECT * FROM agent_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
             resources = connection.execute("SELECT * FROM resource_logs WHERE request_id=?", (saved["request_id"],)).fetchall()
-        self.assertEqual(len(agents), 2)
+            self.assertEqual(len(agents), 1)
         self.assertEqual(len(resources), 1)
-        self.assertEqual(data["counts"]["total"], 3)
+        self.assertEqual(data["counts"]["total"], 2)
         self.assertEqual({row["operation"] for row in data["summary"]}, {"browse", "review", "fit"})
         row = resources[0]
         self.assertGreaterEqual(row["response_ms"], row["processing_ms"])

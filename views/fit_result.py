@@ -29,17 +29,17 @@ with right, st.container(border=True):
         display = f"{value}%" if value is not None else "데이터 없음"
         st.write(f"**{metric['label']}** · {display}")
         st.progress(float(value or 0) / 100)
-        note = " · 낮을수록 적합" if metric["is_return_rate"] else ""
-        st.caption(f"표본 {metric['count']}건 · 적용 가중치 {metric['effective_weight_pct']}%{note}")
+        st.caption(f"표본 {metric['count']}건 · 적용 가중치 {metric['effective_weight_pct']}%")
 
 st.subheader("분석 근거")
 for reason in result["reasons"]:
     st.write(f"• {reason}")
 with st.expander("점수 산정 방식"):
-    st.write("개인 성공률 20% + 개인 선택 사이즈 성공률 30% + 상품 미반품률 15% + 상품 선택 사이즈 미반품률 20% + 리뷰 긍정 비율 15%의 가중합입니다.")
+    st.write("개인 선택 사이즈 성공률 30% + 상품 반품 안정성 20% + 선택 사이즈 반품 안정성 25% + 리뷰 적합도 25%의 가중합입니다.")
     st.write("개인 이력은 동일 카테고리만 사용합니다. 데이터가 없는 항목은 제외하고 남은 가중치를 정규화합니다. 전부 없으면 점수를 산출하지 않습니다.")
     st.write("반품 기간이 종료된 주문으로 가정합니다. 선호 핏·신체 치수는 점수에 반영하지 않으며, 브랜드별 실측 차이는 추후 개선 항목입니다.")
-st.caption(f"실행 ID: {saved['request_id']} · 현재 세션의 최근 분석 결과")
+review_note = "저장된 리뷰 분석 결과를 재사용했습니다." if saved.get("review_source") == "cached" else "리뷰 분석 결과를 새로 생성해 저장했습니다."
+st.caption(f"실행 ID: {saved['request_id']} · {review_note}")
 a, b = st.columns(2)
 a.page_link("views/product_detail.py", label="다른 사이즈 확인하기", icon="👕")
 b.page_link("views/admin_dashboard.py", label="실행 자원 확인하기", icon="📊")

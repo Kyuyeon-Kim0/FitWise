@@ -24,6 +24,12 @@ CREATE TABLE IF NOT EXISTS reviews (
     rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
     content TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS review_analysis (
+    id INTEGER PRIMARY KEY,
+    product_id INTEGER NOT NULL UNIQUE REFERENCES products(id),
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 CREATE TABLE IF NOT EXISTS agent_logs (
     id INTEGER PRIMARY KEY, request_id TEXT NOT NULL,
     agent_type TEXT NOT NULL CHECK(agent_type IN ('review','fit')),
@@ -44,5 +50,6 @@ CREATE TABLE IF NOT EXISTS resource_logs (
 CREATE INDEX IF NOT EXISTS idx_orders_product_size ON orders(product_id, size);
 CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id);
+CREATE INDEX IF NOT EXISTS idx_review_analysis_product ON review_analysis(product_id);
 CREATE INDEX IF NOT EXISTS idx_agents_request ON agent_logs(request_id);
 CREATE INDEX IF NOT EXISTS idx_resources_operation ON resource_logs(operation);

@@ -27,5 +27,29 @@ def list_reviews(connection, product_id):
            WHERE product_id=? ORDER BY r.created_at DESC,r.id DESC""", (product_id,))]
 
 
+def get_review_analysis(connection, product_id):
+    """상품별로 저장된 Review Agent 결과를 반환합니다."""
+    row = connection.execute(
+        "SELECT result_json, created_at FROM review_analysis WHERE product_id=?", (product_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    result = json.loads(row["result_json"])
+    result["created_at"] = row["created_at"]
+    return result
+
+
+def save_review_analysis(connection, product_id, result):
+    """동일 상품의 분석 결과는 하나만 보관하고 최신 결과로 교체합니다."""
+    payload = json.dumps(result, ensure_ascii=False)
+    connection.execute(
+        """INSERT INTO review_analysis(product_id, result_json) VALUES (?, ?)
+           ON CONFLICT(product_id) DO UPDATE SET result_json=excluded.result_json,
+               created_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')""",
+        (product_id, payload),
+    )
+    connection.commit()
+
+
 def list_users(connection):
     return [dict(row) for row in connection.execute("SELECT * FROM users ORDER BY id")]

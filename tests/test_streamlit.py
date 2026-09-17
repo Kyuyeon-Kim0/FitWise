@@ -41,7 +41,7 @@ class StreamlitFlowTest(unittest.TestCase):
                 app.switch_page("views/admin_dashboard.py").run()
                 self.assertEqual(len(app.exception), 0)
                 with connect(database) as connection:
-                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 3)
+                    self.assertEqual(connection.execute("SELECT COUNT(*) FROM agent_logs").fetchone()[0], 2)
                     before = connection.execute("SELECT COUNT(*) FROM resource_logs").fetchone()[0]
                 app.button(key="refresh_dashboard").click().run()
                 self.assertEqual(len(app.exception), 0)

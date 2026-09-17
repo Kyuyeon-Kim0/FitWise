@@ -3,7 +3,8 @@ from app.config import get_settings
 from app.db import connect
 from app.fit_agent import analyze as analyze_fit
 from app.monitoring import measure
-from app.repository import get_product, list_products, list_reviews
+from app.repository import (get_product, get_review_analysis, list_products, list_reviews,
+                            save_review_analysis)
 from app.review_agent import analyze as analyze_reviews
 
 
@@ -24,13 +25,32 @@ def browse_detail(product_id, database=None):
             return get_product(connection, product_id), list_reviews(connection, product_id)
 
 
+def get_or_run_review_analysis(connection, product_id, task=None, user_id=None, size=None,
+                               top_level=False):
+    """저장된 결과를 우선 사용하고, 없을 때에만 Review Agent를 실행합니다."""
+    cached = get_review_analysis(connection, product_id)
+    if cached is not None:
+        cached.pop("created_at", None)
+        return cached, "cached"
+
+    callback = lambda: analyze_reviews(list_reviews(connection, product_id))
+    result = (task.run_agent("review", callback, product_id, user_id, size, top_level=top_level)
+              if task is not None else callback())
+    save_review_analysis(connection, product_id, result)
+    return result, "generated"
+
+
 def run_review(product_id, database=None):
     ensure_baseline()
     with connect(database) as connection:
         get_product(connection, product_id)
+        cached = get_review_analysis(connection, product_id)
+        if cached is not None:
+            cached.pop("created_at", None)
+            return {"result": cached, "request_id": None, "review_source": "cached"}
         with measure(connection, "review") as task:
-            result = task.run_agent("review", lambda: analyze_reviews(list_reviews(connection, product_id)), product_id)
-        return {"result": result, "request_id": task.request_id}
+            result, source = get_or_run_review_analysis(connection, product_id, task, top_level=True)
+        return {"result": result, "request_id": task.request_id, "review_source": source}
 
 
 def run_fit(product_id, user_id, size, database=None):
@@ -43,10 +63,13 @@ def run_fit(product_id, user_id, size, database=None):
             raise ValueError("사용자를 찾을 수 없습니다.")
 
         with measure(connection, "fit") as task:
+            review_context = {}
+
             def pipeline():
-                review = task.run_agent("review", lambda: analyze_reviews(list_reviews(connection, product_id)),
-                                        product_id, user_id, size, top_level=False)
+                review, review_source = get_or_run_review_analysis(connection, product_id, task, user_id, size)
+                review_context["source"] = review_source
                 return analyze_fit(connection, user_id, product, size, review)
             result = task.run_agent("fit", pipeline, product_id, user_id, size)
         return {"result": result, "request_id": task.request_id,
-                "product_id": product_id, "user_id": user_id, "size": size}
+                "product_id": product_id, "user_id": user_id, "size": size,
+                "review_source": review_context["source"]}
