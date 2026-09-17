@@ -2,6 +2,7 @@
 from app.config import get_settings
 from app.db import connect
 from app.fit_agent import analyze as analyze_fit
+from app.fit_agent.advisor import advise as advise_fit
 from app.monitoring import measure
 from app.repository import (get_product, get_review_analysis, list_products, list_reviews,
                             save_review_analysis)
@@ -53,11 +54,13 @@ def run_review(product_id, database=None):
         return {"result": result, "request_id": task.request_id, "review_source": source}
 
 
-def run_fit(product_id, user_id, size, database=None):
+def run_fit(product_id, user_id, size, preferred_fit, database=None):
     ensure_baseline()
     with connect(database) as connection:
         product = get_product(connection, product_id)
-        if type(user_id) is not int or not isinstance(size, str) or size not in product["sizes"]:
+        valid_preferences = {"슬림핏", "레귤러핏", "루즈핏"}
+        if (type(user_id) is not int or not isinstance(size, str) or size not in product["sizes"]
+                or preferred_fit not in valid_preferences):
             raise ValueError("사용자와 상품 사이즈를 확인해 주세요.")
         if connection.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone() is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
@@ -68,8 +71,15 @@ def run_fit(product_id, user_id, size, database=None):
             def pipeline():
                 review, review_source = get_or_run_review_analysis(connection, product_id, task, user_id, size)
                 review_context["source"] = review_source
-                return analyze_fit(connection, user_id, product, size, review)
+                fit_result = analyze_fit(connection, user_id, product, size, review)
+                try:
+                    fit_result["advisor"] = advise_fit(product, size, preferred_fit, fit_result, review)
+                    fit_result["advisor_error"] = None
+                except Exception as exc:
+                    fit_result["advisor"] = None
+                    fit_result["advisor_error"] = type(exc).__name__
+                return fit_result
             result = task.run_agent("fit", pipeline, product_id, user_id, size)
         return {"result": result, "request_id": task.request_id,
                 "product_id": product_id, "user_id": user_id, "size": size,
-                "review_source": review_context["source"]}
+                "preferred_fit": preferred_fit, "review_source": review_context["source"]}
