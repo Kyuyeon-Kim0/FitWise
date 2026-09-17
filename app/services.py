@@ -74,13 +74,14 @@ def run_review(product_id, database=None, *, mode=None):
         return {"result": result, "request_id": task.request_id, "review_source": source}
 
 
-def run_fit(product_id, user_id, size, preferred_fit, database=None):
+def run_fit(product_id, user_id, size, preferred_fit, height, database=None):
     ensure_baseline()
     with connect(database) as connection:
         product = get_product(connection, product_id)
         valid_preferences = {"슬림핏", "레귤러핏", "루즈핏"}
         if (type(user_id) is not int or not isinstance(size, str) or size not in product["sizes"]
-                or preferred_fit not in valid_preferences):
+                or preferred_fit not in valid_preferences
+                or type(height) is not int or height < 140 or height > 200):
             raise ValueError("사용자와 상품 사이즈를 확인해 주세요.")
         if connection.execute("SELECT id FROM users WHERE id=?", (user_id,)).fetchone() is None:
             raise ValueError("사용자를 찾을 수 없습니다.")
@@ -93,7 +94,7 @@ def run_fit(product_id, user_id, size, preferred_fit, database=None):
                 review_context["source"] = review_source
                 fit_result = analyze_fit(connection, user_id, product, size, review)
                 try:
-                    fit_result["advisor"] = advise_fit(product, size, preferred_fit, fit_result, review)
+                    fit_result["advisor"] = advise_fit(product, size, preferred_fit, height, fit_result, review)
                     fit_result["advisor_error"] = None
                 except Exception as exc:
                     fit_result["advisor"] = None
@@ -102,4 +103,4 @@ def run_fit(product_id, user_id, size, preferred_fit, database=None):
             result = task.run_agent("fit", pipeline, product_id, user_id, size)
         return {"result": result, "request_id": task.request_id,
                 "product_id": product_id, "user_id": user_id, "size": size,
-                "preferred_fit": preferred_fit, "review_source": review_context["source"]}
+                "preferred_fit": preferred_fit, "height": height, "review_source": review_context["source"]}
