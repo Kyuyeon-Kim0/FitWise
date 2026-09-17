@@ -13,16 +13,16 @@ st.caption(f"{len(products)}개의 상품 · 가상 데모 컬렉션")
 
 if not products:
     st.info("등록된 상품이 없습니다.")
-for start in range(0, len(products), 3):
-    columns = st.columns(3)
-    for column, product in zip(columns, products[start:start + 3]):
-        with column, st.container(border=True):
+for start in range(0, len(products), 4):
+    columns = st.columns(4)
+    for column, product in zip(columns, products[start:start + 4]):
+        with column, st.container(border=True, key=f"card_{product['id']}"):
             garment(product)
-            st.caption(f"{product['category']} / {product['subcategory']}")
-            st.subheader(product["name"])
+            st.markdown(f"**{product['name']}**")
+            st.write(f"₩{product['price']:,}")
             rating = f"{product['rating']:.1f}" if product["rating"] else "—"
-            st.write(f"**₩{product['price']:,}** · ★ {rating} ({product['review_count']})")
-            if st.button("상품 · 나의 핏 확인 →", key=f"product_{product['id']}", width="stretch"):
+            st.caption(f"★ {rating} ({product['review_count']})")
+            if st.button("나의 핏 확인 →", key=f"product_{product['id']}", width="stretch"):
                 st.session_state.selected_product = product["id"]
                 st.switch_page("views/product_detail.py")
 

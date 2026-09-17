@@ -10,17 +10,13 @@ COLORS = {"sage": ("#e2eadd", "#809a78"), "sand": ("#efe9de", "#b4a181"),
 
 def garment(product):
     background, color = COLORS.get(product["color"], COLORS["sage"])
-    pants = product["category"] == "하의"
-    shape = ("M99 45H201L215 251 157 255 150 130 141 255 84 251Z" if pants else
-             "M119 58 86 69 47 141 80 162 101 123 99 242Q149 251 201 242L199 123 221 162 253 141 214 69 181 58Q150 76 119 58Z")
-    seam = ("M99 60H200M149 48V115M105 65Q104 92 124 93M194 65Q193 92 176 93" if pants else
-            "M120 58Q150 100 181 58M101 124L106 85M199 124L194 85M101 231Q151 239 200 231")
+    rating = product.get("rating")
+    badge = f'<span class="garment-badge">★ {rating:.1f}</span>' if rating else ""
+    image_url = f"app/static/images/product_{product['id']}.png"
     st.html(f'''<div class="garment" style="background:{background};color:{color}">
-    <svg viewBox="0 0 300 300" role="img" aria-label="{escape(product['name'])} 일러스트">
-    <ellipse cx="150" cy="268" rx="78" ry="10" fill="currentColor" opacity=".09"/>
-    <path d="{shape}" fill="currentColor"/>
-    <path d="{seam}" fill="none" stroke="white" stroke-opacity=".5" stroke-width="2"/>
-    </svg><span>FITWISE / {escape(product['subcategory'])}</span></div>''')
+    <span class="garment-tag">{escape(product['subcategory'])}</span>{badge}
+    <img src="{image_url}" alt="{escape(product['name'])}" loading="lazy">
+    <span>FITWISE</span></div>''')
 
 
 def show_review(result):
