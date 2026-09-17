@@ -1,4 +1,6 @@
 """FitWise Agent 운영 및 리소스 모니터링 Dashboard."""
+import os
+
 import pandas as pd
 import streamlit as st
 
@@ -17,8 +19,27 @@ def average(frame, column):
     return None if pd.isna(value) else float(value)
 
 
+def cpu_average(frame):
+    """CPU 로그의 순간 측정 이상치를 IQR 기준으로 제외한 평균."""
+    if frame.empty or "cpu_percent" not in frame:
+        return None
+    values = frame["cpu_percent"].dropna()
+    if values.empty:
+        return None
+    if len(values) >= 4:
+        first_quartile, third_quartile = values.quantile([0.25, 0.75])
+        iqr = third_quartile - first_quartile
+        if iqr == 0:
+            values = values[values == values.median()]
+        else:
+            values = values[
+                values.between(first_quartile - 1.5 * iqr, third_quartile + 1.5 * iqr)
+            ]
+    return None if values.empty else float(values.mean())
+
+
 def number(value, digits=1, suffix=""):
-    return "—" if value is None else f"{value:,.{digits}f}{suffix}"
+    return "—" if value is None or pd.isna(value) else f"{value:,.{digits}f}{suffix}"
 
 
 def reset_filters():
@@ -77,9 +98,14 @@ agents = pd.DataFrame(data["agents"])
 if not resources.empty:
     resources["created_at"] = (pd.to_datetime(resources["created_at"], utc=True, errors="coerce")
                                .dt.tz_convert("Asia/Seoul"))
-    for column in ("cpu_percent", "memory_before_mb", "memory_after_mb", "memory_delta_mb",
+    for column in ("cpu_percent", "cpu_ms", "memory_before_mb", "memory_after_mb", "memory_delta_mb",
                    "processing_ms", "response_ms"):
         resources[column] = pd.to_numeric(resources[column], errors="coerce")
+    # 기존 로그(cpu_ms > 0)는 1코어 기준 값이므로 전체 논리 코어 기준으로 환산합니다.
+    legacy_cpu = resources["cpu_ms"] > 0
+    resources.loc[legacy_cpu, "cpu_percent"] /= max(os.cpu_count() or 1, 1)
+    # 환산 후에도 100%를 넘는 과거 값은 짧은 작업의 타이머 해상도로 발생한 무효 표본입니다.
+    resources.loc[~resources["cpu_percent"].between(0, 100), "cpu_percent"] = pd.NA
     resources["mode"] = resources["operation"].map(
         lambda value: "Agent 미사용" if value == "browse" else "Agent 사용"
     )
@@ -145,8 +171,8 @@ successful = filtered[(filtered["phase"] == "completed") & (filtered["status"] =
 agent_runs = successful[successful["operation"] != "browse"] if not successful.empty else successful
 baseline = successful[successful["operation"] == "browse"] if not successful.empty else successful
 
-cpu_on = average(agent_runs, "cpu_percent")
-cpu_off = average(baseline, "cpu_percent")
+cpu_on = cpu_average(agent_runs)
+cpu_off = cpu_average(baseline)
 memory_on = average(agent_runs, "memory_after_mb")
 memory_off = average(baseline, "memory_after_mb")
 response_on = average(agent_runs, "response_ms")
@@ -174,7 +200,7 @@ st.html('<div class="dashboard-section-title"><h3>리소스 영향 비교</h3><s
 cpu_column, memory_column = st.columns(2)
 with cpu_column, st.container(border=True):
     st.subheader("평균 CPU 사용량")
-    st.caption("1코어 기준 · 로그 행별 평균")
+    st.caption("전체 논리 코어 기준 · IQR 이상치 제외 평균")
     cpu_compare = pd.DataFrame(
         {"CPU %": [cpu_off, cpu_on]}, index=["Agent 미사용", "Agent 사용"]
     ).dropna()
@@ -219,8 +245,8 @@ with after_column, st.container(border=True, key="dashboard_phase_after"):
     st.caption("응답 완료 직후 프로세스 RSS")
 
 st.html(
-    '<div class="dashboard-note">현재 CPU는 작업 구간 전체의 프로세스 사용률입니다. '
-    '더 정밀한 전·중·후 비교에는 단계별 CPU 샘플과 회복시간 수집이 필요합니다.</div>'
+    '<div class="dashboard-note">CPU는 psutil의 프로세스 사용률을 전체 논리 코어 기준으로 정규화한 값이며, '
+    'Memory는 작업 종료 직후 프로세스 RSS입니다.</div>'
 )
 
 st.html('<div class="dashboard-section-title"><h3>응답 성능</h3><span>Agent 유형별 추이와 평균</span></div>')
@@ -276,7 +302,7 @@ with st.expander("Agent 실행 상세 · 최근 30건"):
 
 with st.expander("측정 기준과 한계"):
     st.markdown("""
-    - **CPU**: 프로세스 CPU 시간 증가량을 작업 경과시간으로 나눈 1코어 기준 값입니다.
+    - **CPU**: `psutil`의 프로세스 CPU 사용률을 논리 코어 수로 나눈 0~100% 기준 값이며, IQR 기준 이상치를 평균에서 제외합니다.
     - **Memory**: `psutil`로 측정한 작업 전·후 프로세스 RSS이며 Agent 전용 메모리나 최대 사용량은 아닙니다.
     - **처리시간**: 분석 함수 실행 구간이며, 서비스 응답시간은 Agent 로그 저장까지 포함합니다.
     - **Fit 작업**은 내부 Review 실행을 포함하므로 Agent 로그 수와 리소스 작업 수가 다를 수 있습니다.

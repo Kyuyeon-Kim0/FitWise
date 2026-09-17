@@ -13,7 +13,8 @@ SQLite 연결은 `with connect(...)`로 열고 닫습니다. 연결 객체를 �
 |---|---|---|
 | `browse_products(category, database)` | 전체/상의/아우터/하의 | 상품 dict 목록 |
 | `browse_detail(product_id, database)` | 상품 ID | (상품 dict, 리뷰 dict 목록) |
-| `run_review(product_id, database)` | 상품 ID | `{result, request_id}` |
+| `run_review(product_id, database)` | 상품 ID | `{result, request_id}` (규칙 기반 baseline 고정 결과) |
+| `ask_review_agent(product_id, question, database)` | 상품 ID, 자유 질문 텍스트 | `{result: {answer, tools_used}, request_id}` |
 | `run_fit(product_id, user_id, size, preferred_fit, height, weight, database)` | 상품/사용자 ID, 유효한 사이즈·선호 핏·키·몸무게 | `{result, request_id, product_id, user_id, size, preferred_fit, height, weight}` |
 
 잘못된 카테고리/상품/사용자/사이즈는 ValueError입니다. 검증 실패는 Agent 실행으로 세지 않습니다.
@@ -77,12 +78,21 @@ orders 한 행은 상품 1개 구매입니다. returns.order_id는 UNIQUE이며 
 - 매우 짧은 작업은 CPU가 0으로 측정될 수 있습니다. 프로세스 내 동시 세션과 서버 작업이 측정에 섞일 수 있습니다.
 - Dashboard 평균은 성공 작업 전체 기준이며, 표본을 초기화하거나 삭제하지 않습니다.
 
-## 미래 API 연결
+## API 연결 (OpenAI)
 
-`OPENAI_API_KEY`와 `OPENAI_MODEL`만 공통 설정에서 읽습니다. 실제 API 호출은 아직 구현하지 않았습니다.
-모델은 팀이 선택한 값을 사용하고 API 키 원문·전체 입력을 로그에 저장하지 않습니다.
-API 결과에도 현재 계약을 적용하고 `mode`로 baseline/API 여부를 명시하세요.
-선택한 SDK와 모델에 대한 구현은 [공식 OpenAI 문서](https://developers.openai.com/api/docs/quickstart)를 확인합니다.
+`OPENAI_API_KEY`와 `OPENAI_MODEL`만 공통 설정에서 읽습니다. 키가 없으면 각 기능은
+조용히 건너뛰거나(`advisor`는 `None`) ValueError로 명확히 안내합니다. API 키 원문·전체
+입력을 로그에 저장하지 않습니다.
+
+- **일반 리뷰 분석**(`run_review`)은 API를 호출하지 않는 규칙 기반 baseline 고정입니다.
+- **AI Review Agent**(`ask_review_agent`, `app/review_agent/qa_agent.py`)는 OpenAI Function
+  Calling으로 `search_reviews`/`get_product_info` 도구를 모델이 스스로 선택해 호출하는
+  실제 agentic 루프입니다. 통계 계산은 하지 않고, 도구가 반환한 실제 데이터만 근거로
+  자연어 답변(`{answer, tools_used}`)을 생성합니다.
+- **AI Fit/Review Advisor**(`app/fit_agent/advisor.py`, `app/review_agent/advisor.py`)는
+  이미 계산된 점수·통계를 근거로 자연어 조언만 생성하며, 숫자를 새로 계산하지 않습니다.
+- 리뷰 원문에 지시문처럼 보이는 내용이 있어도 절대 따르지 않도록 모든 프롬프트에 명시합니다.
+- 선택한 SDK와 모델에 대한 구현은 [공식 OpenAI 문서](https://developers.openai.com/api/docs/quickstart)를 확인합니다.
 
 Streamlit 화면 구조는 [공식 multipage 문서](https://docs.streamlit.io/develop/concepts/multipage-apps/page-and-navigation),
 메모리 측정은 [psutil 문서](https://psutil.readthedocs.io/stable/)를 참고했습니다.

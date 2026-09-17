@@ -48,7 +48,7 @@ def measure(connection, operation):
     task = Operation(connection)
     process = psutil.Process()
     memory_before = process.memory_info().rss / 1024 ** 2
-    cpu_started = time.process_time()
+    process.cpu_percent(interval=None)
     started = time.perf_counter()
     status = "success"
     # 서비스 진입 시점은 분석 버튼을 누른 시점에 해당합니다.
@@ -66,13 +66,15 @@ def measure(connection, operation):
         raise
     finally:
         elapsed = max((time.perf_counter() - started) * 1000, 0.001)
-        cpu_ms = max((time.process_time() - cpu_started) * 1000, 0)
+        logical_cpu_count = max(psutil.cpu_count(logical=True) or 1, 1)
+        cpu_percent = min(max(process.cpu_percent(interval=None) / logical_cpu_count, 0.0), 100.0)
         memory_after = process.memory_info().rss / 1024 ** 2
         connection.execute(
             """INSERT INTO resource_logs(request_id,operation,phase,cpu_percent,cpu_ms,memory_before_mb,
                memory_after_mb,memory_delta_mb,processing_ms,response_ms,status)
                VALUES (?,?,'completed',?,?,?,?,?,?,?,?)""",
-            (task.request_id, operation, cpu_ms / elapsed * 100, cpu_ms, memory_before,
+            # psutil의 프로세스 CPU 사용률을 전체 논리 코어 기준(0~100%)으로 정규화합니다.
+            (task.request_id, operation, cpu_percent, 0.0, memory_before,
              memory_after, memory_after - memory_before,
              elapsed if operation == "browse" else task.processing_ms, elapsed, status))
         connection.commit()

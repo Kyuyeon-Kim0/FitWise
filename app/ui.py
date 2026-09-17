@@ -72,8 +72,7 @@ def garment(product):
 
 
 def show_review(result):
-    mode_label = f"AI 에이전트 분석 · {result['mode']}" if result["mode"].startswith("api-") else f"규칙 기반 분석 · {result['mode']}"
-    st.caption(mode_label)
+    st.caption(f"규칙 기반 분석 · {result['mode']}")
     metrics = (("긍정", "positive_pct"), ("중립", "neutral_pct"), ("부정", "negative_pct"), ("사이즈 불만", "size_complaint_pct"))
     for row_start in (0, 2):
         cols = st.columns(2)
