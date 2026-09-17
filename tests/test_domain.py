@@ -29,8 +29,15 @@ class FitWiseTest(unittest.TestCase):
     def test_seed_idempotent_and_foreign_keys(self):
         initialize(self.database)
         with connect(self.database) as connection:
-            for table, expected in (("users", 20), ("products", 36), ("orders", 864), ("reviews", 864)):
+            for table, expected in (("users", 20), ("products", 36), ("orders", 864)):
                 self.assertEqual(connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], expected)
+            # 상품별 리뷰 수는 10~30건 사이 무작위이므로 범위와 상품별 최소치만 검증합니다.
+            review_total = connection.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
+            self.assertTrue(36 * 10 <= review_total <= 36 * 30)
+            per_product = [row[0] for row in connection.execute(
+                "SELECT COUNT(*) FROM reviews GROUP BY product_id")]
+            self.assertEqual(len(per_product), 36)
+            self.assertTrue(all(10 <= c <= 30 for c in per_product))
             with self.assertRaises(sqlite3.IntegrityError):
                 connection.execute("INSERT INTO returns(order_id,reason,returned_at) VALUES (99999,'test','2026-09-01')")
             connection.rollback()

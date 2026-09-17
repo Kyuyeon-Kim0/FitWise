@@ -203,7 +203,6 @@ def seed_demo(connection):
         (1, "사이즈가 안 맞아서 반품했어요. 허리가 너무 작아요."), (1, "기장이 너무 길어서 줄였어요."),
         (1, "허리가 너무 커서 흘러내려요."),
     ]
-    reviews_per_product = 24
     with connection:
         connection.executemany("INSERT INTO users VALUES (?,?,?,?,?)", [
             (uid, name, fit, height, round((height - 100) * 0.9 + ((uid % 5) - 2) * 2))
@@ -231,7 +230,7 @@ def seed_demo(connection):
             # 재실행해도 항상 같은 결과가 나오도록 상품 id를 시드로 고정합니다.
             rng = random.Random(pid)
             pool = common_fragments + (bottom_fragments if item[1] == "하의" else top_fragments)
-            picks = rng.sample(pool, reviews_per_product)
+            picks = rng.sample(pool, rng.randint(10, 30))
             for j, (rating, content) in enumerate(picks):
                 uid = rng.choice(user_ids)
                 size = rng.choice(("S", "M", "L"))
